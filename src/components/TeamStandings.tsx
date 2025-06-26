@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Users, Target, TrendingUp, Medal, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Player, Result, Pairing, TeamStanding } from '../types/database';
+import { Player, Result, Pairing, TeamStanding, Team } from '../types/database';
 import { calculateTeamStandings } from '../utils/teamPairingAlgorithms';
+import TeamLogo from './TeamLogo';
 
 interface TeamStandingsProps {
   tournamentId: string;
@@ -14,6 +15,7 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
   onPlayerClick 
 }) => {
   const [teamStandings, setTeamStandings] = useState<TeamStanding[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [individualStandings, setIndividualStandings] = useState<Array<{
     id: string;
     name: string;
@@ -25,6 +27,7 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
     points: number;
     spread: number;
     rank: number;
+    team_info?: Team;
   }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,18 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
     try {
       setIsLoading(true);
       setError(null);
+
+      // Load teams
+      const { data: teamsData, error: teamsError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('tournament_id', tournamentId)
+        .order('name');
+
+      if (teamsError && teamsError.code !== 'PGRST116') {
+        throw teamsError;
+      }
+      setTeams(teamsData || []);
 
       // Load all players
       const { data: playersData, error: playersError } = await supabase
@@ -75,13 +90,20 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
         pairingsData || []
       );
 
-      setTeamStandings(teamStandingsData);
+      // Enhance team standings with team info
+      const enhancedTeamStandings = teamStandingsData.map(standing => ({
+        ...standing,
+        team_info: teamsData?.find(team => team.name === standing.team_name)
+      }));
+
+      setTeamStandings(enhancedTeamStandings);
 
       // Calculate individual standings within teams
       const individualStandingsData = calculateIndividualStandings(
         playersData || [],
         resultsData || [],
-        pairingsData || []
+        pairingsData || [],
+        teamsData || []
       );
 
       setIndividualStandings(individualStandingsData);
@@ -97,7 +119,8 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
   const calculateIndividualStandings = (
     players: Player[],
     results: any[],
-    pairings: any[]
+    pairings: any[],
+    teams: Team[]
   ) => {
     const standings = players.map(player => {
       let wins = 0;
@@ -132,6 +155,7 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
 
       const points = wins + (draws * 0.5);
       const spread = pointsFor - pointsAgainst;
+      const teamInfo = teams.find(team => team.name === player.team_name);
 
       return {
         id: player.id!,
@@ -143,7 +167,8 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
         draws,
         points,
         spread,
-        rank: 0
+        rank: 0,
+        team_info: teamInfo
       };
     });
 
@@ -351,9 +376,17 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
                     </td>
                     
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTeamColor(team.team_name)}`}>
-                        {team.team_name}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <TeamLogo 
+                          team={team.team_info} 
+                          teamName={team.team_name} 
+                          size="md" 
+                          showFlag={true}
+                        />
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getTeamColor(team.team_name)}`}>
+                          {team.team_name}
+                        </span>
+                      </div>
                     </td>
                     
                     <td className="px-6 py-4 text-center">
@@ -458,9 +491,17 @@ const TeamStandings: React.FC<TeamStandingsProps> = ({
                     </td>
                     
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getTeamColor(player.team_name)}`}>
-                        {player.team_name}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <TeamLogo 
+                          team={player.team_info} 
+                          teamName={player.team_name} 
+                          size="xs" 
+                          showFlag={false}
+                        />
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getTeamColor(player.team_name)}`}>
+                          {player.team_name}
+                        </span>
+                      </div>
                     </td>
                     
                     <td className="px-6 py-4 text-center">

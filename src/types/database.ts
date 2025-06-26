@@ -44,6 +44,16 @@ export interface Sponsor {
   created_at?: string;
 }
 
+// Team Management Types
+export interface Team {
+  id?: string;
+  tournament_id: string;
+  name: string;
+  logo_url?: string;
+  country?: string;
+  created_at?: string;
+}
+
 export interface ParsedPlayer {
   name: string;
   rating: number;
@@ -115,6 +125,7 @@ export interface TeamStanding {
   total_spread: number;
   players: Player[];
   rank: number;
+  team_info?: Team; // Added for logo and flag display
 }
 
 export interface TeamMatchResult {

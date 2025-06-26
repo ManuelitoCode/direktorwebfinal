@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Eye, Save, ArrowLeft, ChevronRight, Trophy, CheckCircle, Share2, Copy, Check, UserCheck } from 'lucide-react';
+import { Users, Eye, Save, ArrowLeft, ChevronRight, Trophy, CheckCircle, Share2, Copy, Check, UserCheck, Settings } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
 import PlayerPreviewTable from './PlayerPreviewTable';
 import TournamentHeader from './TournamentHeader';
+import TeamManager from './TeamManager';
 import { parsePlayerInput } from '../utils/playerParser';
 import { supabase } from '../lib/supabase';
-import { ParsedPlayer, Player, Tournament, Division } from '../types/database';
+import { ParsedPlayer, Player, Tournament, Division, Team } from '../types/database';
 
 interface PlayerRegistrationProps {
   onBack: () => void;
@@ -21,10 +22,12 @@ const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
 }) => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [divisions, setDivisions] = useState<Division[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [currentDivisionIndex, setCurrentDivisionIndex] = useState(0);
   const [inputText, setInputText] = useState('');
   const [parsedPlayers, setParsedPlayers] = useState<ParsedPlayer[]>([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [showTeamManager, setShowTeamManager] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,11 +125,34 @@ James Rodriguez, 1856`;
         setDivisions(divisionsData);
       }
 
+      // Load teams if in team mode
+      if (tournamentData.team_mode) {
+        await loadTeams();
+      }
+
     } catch (err) {
       console.error('Error loading tournament data:', err);
       setError('Failed to load tournament data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadTeams = async () => {
+    try {
+      const { data: teamsData, error: teamsError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('tournament_id', tournamentId)
+        .order('name');
+
+      if (teamsError && teamsError.code !== 'PGRST116') {
+        throw teamsError;
+      }
+
+      setTeams(teamsData || []);
+    } catch (err) {
+      console.error('Error loading teams:', err);
     }
   };
 
@@ -284,14 +310,43 @@ James Rodriguez, 1856`;
               <ArrowLeft size={20} />
               <span className="font-jetbrains">Back</span>
             </button>
-            <div className="flex items-center gap-2 text-blue-400">
-              {isTeamMode ? <UserCheck size={24} /> : <Users size={24} />}
-              <span className="font-jetbrains text-sm">
-                {isTeamMode ? 'Team Registration' : 'Player Registration'}
-              </span>
+            <div className="flex items-center gap-4">
+              {/* Team Manager Button (Team Mode Only) */}
+              {isTeamMode && (
+                <button
+                  onClick={() => setShowTeamManager(!showTeamManager)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-jetbrains font-medium transition-all duration-200 ${
+                    showTeamManager
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-purple-600/20 border border-purple-500/50 text-purple-400 hover:bg-purple-600/30'
+                  }`}
+                >
+                  <Settings size={16} />
+                  Team Manager
+                </button>
+              )}
+              
+              <div className="flex items-center gap-2 text-blue-400">
+                {isTeamMode ? <UserCheck size={24} /> : <Users size={24} />}
+                <span className="font-jetbrains text-sm">
+                  {isTeamMode ? 'Team Registration' : 'Player Registration'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Team Manager Section */}
+        {isTeamMode && showTeamManager && (
+          <div className="max-w-6xl mx-auto w-full mb-8">
+            <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
+              <TeamManager 
+                tournamentId={tournamentId} 
+                onTeamsUpdated={loadTeams}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Team Mode Banner */}
         {isTeamMode && (
@@ -307,6 +362,21 @@ James Rodriguez, 1856`;
               <p className="text-blue-200 font-jetbrains text-xs">
                 Format: Player Name, Rating ; ; team TeamName
               </p>
+              {teams.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-blue-300 font-jetbrains text-sm mb-2">Available teams:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {teams.map(team => (
+                      <span
+                        key={team.id}
+                        className="inline-flex items-center px-2 py-1 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded text-xs font-jetbrains"
+                      >
+                        {team.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -454,7 +524,7 @@ James Rodriguez, 1856`;
           {/* Preview Table */}
           {showPreview && (
             <div className="mb-8">
-              <PlayerPreviewTable players={parsedPlayers} teamMode={isTeamMode} />
+              <PlayerPreviewTable players={parsedPlayers} teamMode={isTeamMode} teams={teams} />
             </div>
           )}
 

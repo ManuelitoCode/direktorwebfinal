@@ -1,13 +1,19 @@
 import React from 'react';
 import { CheckCircle, AlertCircle, Users } from 'lucide-react';
-import { ParsedPlayer } from '../types/database';
+import { ParsedPlayer, Team } from '../types/database';
+import TeamLogo from './TeamLogo';
 
 interface PlayerPreviewTableProps {
   players: ParsedPlayer[];
   teamMode?: boolean;
+  teams?: Team[];
 }
 
-const PlayerPreviewTable: React.FC<PlayerPreviewTableProps> = ({ players, teamMode = false }) => {
+const PlayerPreviewTable: React.FC<PlayerPreviewTableProps> = ({ 
+  players, 
+  teamMode = false, 
+  teams = [] 
+}) => {
   if (players.length === 0) return null;
 
   const validPlayers = players.filter(p => p.isValid);
@@ -15,6 +21,11 @@ const PlayerPreviewTable: React.FC<PlayerPreviewTableProps> = ({ players, teamMo
 
   // Group players by team if in team mode
   const teamGroups = teamMode ? groupPlayersByTeam(validPlayers) : new Map();
+
+  // Helper function to get team info
+  const getTeamInfo = (teamName: string): Team | undefined => {
+    return teams.find(team => team.name === teamName);
+  };
 
   return (
     <div className="fade-up w-full max-w-4xl mx-auto">
@@ -48,17 +59,28 @@ const PlayerPreviewTable: React.FC<PlayerPreviewTableProps> = ({ players, teamMo
             Team Summary
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from(teamGroups.entries()).map(([teamName, teamPlayers]) => (
-              <div key={teamName} className="bg-gray-800/50 border border-gray-600 rounded-lg p-4">
-                <div className="font-medium text-white mb-2">{teamName}</div>
-                <div className="text-sm text-gray-400">
-                  {teamPlayers.length} player{teamPlayers.length !== 1 ? 's' : ''}
+            {Array.from(teamGroups.entries()).map(([teamName, teamPlayers]) => {
+              const teamInfo = getTeamInfo(teamName);
+              return (
+                <div key={teamName} className="bg-gray-800/50 border border-gray-600 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <TeamLogo 
+                      team={teamInfo} 
+                      teamName={teamName} 
+                      size="sm" 
+                      showFlag={true}
+                    />
+                    <div className="font-medium text-white">{teamName}</div>
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {teamPlayers.length} player{teamPlayers.length !== 1 ? 's' : ''}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Avg Rating: {Math.round(teamPlayers.reduce((sum, p) => sum + p.rating, 0) / teamPlayers.length)}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  Avg Rating: {Math.round(teamPlayers.reduce((sum, p) => sum + p.rating, 0) / teamPlayers.length)}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -108,9 +130,17 @@ const PlayerPreviewTable: React.FC<PlayerPreviewTableProps> = ({ players, teamMo
                   {teamMode && (
                     <td className="px-6 py-4 whitespace-nowrap">
                       {player.team_name ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100/10 text-blue-300 border border-blue-500/30">
-                          {player.team_name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <TeamLogo 
+                            team={getTeamInfo(player.team_name)} 
+                            teamName={player.team_name} 
+                            size="xs" 
+                            showFlag={false}
+                          />
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100/10 text-blue-300 border border-blue-500/30">
+                            {player.team_name}
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-gray-500 italic text-sm">No team</span>
                       )}
