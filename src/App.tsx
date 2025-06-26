@@ -15,6 +15,7 @@ import TournamentResume from './components/TournamentResume';
 import PublicTournamentView from './components/PublicTournamentView';
 import ProjectionMode from './components/ProjectionMode';
 import QRCodeModal from './components/QRCodeModal';
+import LandingPage from './components/LandingPage';
 import { supabase } from './lib/supabase';
 import { useTournamentProgress } from './hooks/useTournamentProgress';
 import type { User } from '@supabase/supabase-js';
@@ -507,7 +508,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<DashboardRoute />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthRoute />} />
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/admin" element={<DashboardRoute />} />
