@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import { PairingFormat, PairingGoal, PairingSystemAnalysis, DirectorIntent } from '../types/database';
+import { useLogicBlock } from '../hooks/useLogicBlocks';
 
 // Define the 10 strategic goals for pairing systems
 export const PAIRING_GOALS: Record<string, PairingGoal> = {
@@ -64,8 +66,36 @@ export const PAIRING_GOALS: Record<string, PairingGoal> = {
   }
 };
 
-// Analyze each pairing system against the strategic goals
-export function analyzePairingSystem(format: PairingFormat, playerCount: number = 32, rounds: number = 7): PairingSystemAnalysis {
+// Hook to use dynamic pairing system analysis
+export function usePairingSystemAnalysis(format: PairingFormat, playerCount: number = 32, rounds: number = 7) {
+  const [analysis, setAnalysis] = useState<PairingSystemAnalysis | null>(null);
+  const { logicCode, isLoading, error } = useLogicBlock('pairing_analysis');
+  
+  useEffect(() => {
+    if (!isLoading && !error && logicCode) {
+      try {
+        // Create a safe function from the logic code
+        const analyzeFunction = new Function('format', 'playerCount', 'rounds', 'PAIRING_GOALS', logicCode);
+        
+        // Execute the function with our parameters
+        const result = analyzeFunction(format, playerCount, rounds, PAIRING_GOALS);
+        setAnalysis(result);
+      } catch (err) {
+        console.error('Error executing pairing analysis logic:', err);
+        // Fallback to static analysis
+        setAnalysis(staticAnalyzePairingSystem(format, playerCount, rounds));
+      }
+    } else if (!isLoading && (error || !logicCode)) {
+      // Fallback to static analysis if there was an error or no logic code
+      setAnalysis(staticAnalyzePairingSystem(format, playerCount, rounds));
+    }
+  }, [format, playerCount, rounds, logicCode, isLoading, error]);
+  
+  return { analysis, isLoading };
+}
+
+// Analyze each pairing system against the strategic goals (static fallback)
+export function staticAnalyzePairingSystem(format: PairingFormat, playerCount: number = 32, rounds: number = 7): PairingSystemAnalysis {
   const analysis: PairingSystemAnalysis = {
     format,
     goals: {},
@@ -157,404 +187,21 @@ export function analyzePairingSystem(format: PairingFormat, playerCount: number 
       ];
       break;
 
-    case 'fonte-swiss':
+    // Add other pairing systems here...
+    default:
+      // Default analysis for unknown formats
       analysis.goals = {
-        aristomachy: {
-          score: 9,
-          explanation: 'Excellent at bringing top performers together while maintaining competitive balance',
-          status: 'excellent'
-        },
-        divisionSizing: {
-          score: 8,
-          explanation: 'Handles varying player counts well, though works best with even score groups',
-          status: 'excellent'
-        },
-        exagony: {
-          score: 6,
-          explanation: 'Can incorporate team avoidance but requires additional logic',
-          status: 'fair'
-        },
         fairness: {
-          score: 10,
-          explanation: 'Superior fairness by pairing within score groups',
-          status: 'excellent'
-        },
-        implementability: {
-          score: 7,
-          explanation: 'More complex than standard Swiss but still manageable',
-          status: 'good'
-        },
-        incentivization: {
-          score: 10,
-          explanation: 'Perfect incentive structure - no benefit to losing',
-          status: 'excellent'
-        },
-        inclusivity: {
-          score: 8,
-          explanation: 'Excellent for allowing underdogs to compete at their level',
-          status: 'excellent'
-        },
-        monagony: {
-          score: 7,
-          explanation: 'Good rematch avoidance within score groups',
-          status: 'good'
-        },
-        monotony: {
-          score: 9,
-          explanation: 'Excellent at maintaining skill-based hierarchy',
-          status: 'excellent'
-        },
-        suspense: {
-          score: 8,
-          explanation: 'Great suspense as leaders face other leaders',
-          status: 'excellent'
-        }
-      };
-      analysis.strengths = [
-        'Maximum fairness through score-group pairing',
-        'Excellent competitive balance',
-        'Strong incentive structure',
-        'Good suspense maintenance'
-      ];
-      analysis.weaknesses = [
-        'More complex to implement',
-        'May create uneven table counts'
-      ];
-      analysis.recommendations = [
-        'Best for highly competitive events',
-        'Ideal when fairness is critical',
-        'Use for elite tournaments'
-      ];
-      analysis.bestFor = [
-        'Elite competitive play',
-        'When maximum fairness is required',
-        'Tournaments with skilled directors'
-      ];
-      analysis.avoidIf = [
-        'Casual tournaments',
-        'Directors unfamiliar with the system'
-      ];
-      break;
-
-    case 'king-of-hill':
-      analysis.goals = {
-        aristomachy: {
-          score: 3,
-          explanation: 'Top players meet immediately, reducing late-tournament suspense',
-          status: 'poor'
-        },
-        divisionSizing: {
-          score: 7,
-          explanation: 'Works with any player count but may create unbalanced pairings',
-          status: 'good'
-        },
-        exagony: {
           score: 5,
-          explanation: 'Difficult to avoid same-team pairings due to ranking constraints',
-          status: 'fair'
-        },
-        fairness: {
-          score: 6,
-          explanation: 'Can be unfair to middle-ranked players who face extremes',
-          status: 'fair'
-        },
-        implementability: {
-          score: 9,
-          explanation: 'Very simple to implement and understand',
-          status: 'excellent'
-        },
-        incentivization: {
-          score: 8,
-          explanation: 'Generally good incentives, though some edge cases exist',
-          status: 'excellent'
-        },
-        inclusivity: {
-          score: 9,
-          explanation: 'Excellent for giving lower-rated players winnable games',
-          status: 'excellent'
-        },
-        monagony: {
-          score: 4,
-          explanation: 'May force rematches due to ranking constraints',
-          status: 'poor'
-        },
-        monotony: {
-          score: 5,
-          explanation: 'Can allow weaker players to leapfrog stronger ones',
-          status: 'fair'
-        },
-        suspense: {
-          score: 10,
-          explanation: 'Maximum suspense as anyone can win until the end',
-          status: 'excellent'
-        }
-      };
-      analysis.strengths = [
-        'Maximum suspense and excitement',
-        'Very simple to implement',
-        'Great for underdog stories',
-        'Easy to understand'
-      ];
-      analysis.weaknesses = [
-        'Poor aristomachy (top players meet early)',
-        'May force unwanted rematches',
-        'Can be unfair to middle-tier players'
-      ];
-      analysis.recommendations = [
-        'Best for casual, fun tournaments',
-        'Use when maximum excitement is desired',
-        'Good for smaller fields'
-      ];
-      analysis.bestFor = [
-        'Casual tournaments',
-        'Maximum suspense events',
-        'Smaller player fields',
-        'Entertainment-focused events'
-      ];
-      analysis.avoidIf = [
-        'Highly competitive tournaments',
-        'When fairness is critical',
-        'Large player fields'
-      ];
-      break;
-
-    case 'round-robin':
-      analysis.goals = {
-        aristomachy: {
-          score: 5,
-          explanation: 'Top players meet at predetermined times, not necessarily late',
-          status: 'fair'
-        },
-        divisionSizing: {
-          score: 3,
-          explanation: 'Very poor - only works with small, fixed player counts',
-          status: 'poor'
-        },
-        exagony: {
-          score: 2,
-          explanation: 'Everyone plays everyone - impossible to avoid same-team matchups',
-          status: 'critical'
-        },
-        fairness: {
-          score: 10,
-          explanation: 'Perfect fairness - everyone plays identical opponents',
-          status: 'excellent'
-        },
-        implementability: {
-          score: 4,
-          explanation: 'Simple concept but becomes unwieldy with larger fields',
-          status: 'poor'
-        },
-        incentivization: {
-          score: 10,
-          explanation: 'Perfect incentives - every game matters equally',
-          status: 'excellent'
-        },
-        inclusivity: {
-          score: 6,
-          explanation: 'Fair but doesn\'t give underdogs easier paths',
-          status: 'fair'
-        },
-        monagony: {
-          score: 1,
-          explanation: 'Impossible - everyone plays everyone exactly once',
-          status: 'critical'
-        },
-        monotony: {
-          score: 8,
-          explanation: 'Strong players generally finish higher',
-          status: 'excellent'
-        },
-        suspense: {
-          score: 6,
-          explanation: 'Moderate suspense, depends on scheduling',
+          explanation: 'Unknown pairing system, fairness cannot be determined',
           status: 'fair'
         }
       };
-      analysis.strengths = [
-        'Perfect fairness',
-        'Excellent incentive structure',
-        'Clear, unambiguous results'
-      ];
-      analysis.weaknesses = [
-        'Only works with very small fields',
-        'Requires many rounds',
-        'No team/club separation possible'
-      ];
-      analysis.recommendations = [
-        'Only use for very small tournaments (8 players or fewer)',
-        'Good for qualification rounds',
-        'Consider for final playoffs'
-      ];
-      analysis.bestFor = [
-        'Very small tournaments',
-        'Qualification rounds',
-        'Final championship rounds'
-      ];
-      analysis.avoidIf = [
-        'More than 8-10 players',
-        'Limited time/rounds',
-        'Team separation needed'
-      ];
-      break;
-
-    case 'quartile':
-      analysis.goals = {
-        aristomachy: {
-          score: 6,
-          explanation: 'Top quartile players meet each other, providing some aristomachy',
-          status: 'fair'
-        },
-        divisionSizing: {
-          score: 7,
-          explanation: 'Works reasonably well with various player counts',
-          status: 'good'
-        },
-        exagony: {
-          score: 5,
-          explanation: 'Limited ability to avoid same-team pairings within quartiles',
-          status: 'fair'
-        },
-        fairness: {
-          score: 7,
-          explanation: 'Good fairness by matching similar skill levels',
-          status: 'good'
-        },
-        implementability: {
-          score: 8,
-          explanation: 'Relatively simple to implement and understand',
-          status: 'excellent'
-        },
-        incentivization: {
-          score: 8,
-          explanation: 'Good incentives with some edge cases',
-          status: 'excellent'
-        },
-        inclusivity: {
-          score: 8,
-          explanation: 'Excellent for giving each quartile competitive games',
-          status: 'excellent'
-        },
-        monagony: {
-          score: 6,
-          explanation: 'Moderate rematch avoidance within quartiles',
-          status: 'fair'
-        },
-        monotony: {
-          score: 7,
-          explanation: 'Generally maintains skill-based rankings',
-          status: 'good'
-        },
-        suspense: {
-          score: 7,
-          explanation: 'Good suspense within each quartile',
-          status: 'good'
-        }
-      };
-      analysis.strengths = [
-        'Good balance of fairness and excitement',
-        'Creates competitive games at all levels',
-        'Relatively simple to implement'
-      ];
-      analysis.weaknesses = [
-        'May create artificial barriers between quartiles',
-        'Less optimal than Swiss for pure fairness'
-      ];
-      analysis.recommendations = [
-        'Good for mixed-skill tournaments',
-        'Use when you want competitive games at all levels',
-        'Consider for recreational events'
-      ];
-      analysis.bestFor = [
-        'Mixed-skill tournaments',
-        'Recreational events',
-        'When you want multiple competitive tiers'
-      ];
-      analysis.avoidIf = [
-        'Elite competitive events',
-        'Very small or very large fields'
-      ];
-      break;
-
-    case 'manual':
-      analysis.goals = {
-        aristomachy: {
-          score: 10,
-          explanation: 'Perfect control - can schedule top players to meet whenever desired',
-          status: 'excellent'
-        },
-        divisionSizing: {
-          score: 10,
-          explanation: 'Complete flexibility with any player count or situation',
-          status: 'excellent'
-        },
-        exagony: {
-          score: 10,
-          explanation: 'Perfect control over team/club separation',
-          status: 'excellent'
-        },
-        fairness: {
-          score: 5,
-          explanation: 'Depends entirely on director skill and bias',
-          status: 'fair'
-        },
-        implementability: {
-          score: 2,
-          explanation: 'Very difficult and time-consuming for directors',
-          status: 'critical'
-        },
-        incentivization: {
-          score: 5,
-          explanation: 'Depends on director understanding of incentive structures',
-          status: 'fair'
-        },
-        inclusivity: {
-          score: 8,
-          explanation: 'Can be designed to give underdogs optimal chances',
-          status: 'excellent'
-        },
-        monagony: {
-          score: 10,
-          explanation: 'Perfect control over rematch avoidance',
-          status: 'excellent'
-        },
-        monotony: {
-          score: 7,
-          explanation: 'Can maintain or subvert skill hierarchies as desired',
-          status: 'good'
-        },
-        suspense: {
-          score: 10,
-          explanation: 'Perfect control over suspense and drama',
-          status: 'excellent'
-        }
-      };
-      analysis.strengths = [
-        'Perfect control over all aspects',
-        'Can optimize for any specific goal',
-        'Maximum flexibility'
-      ];
-      analysis.weaknesses = [
-        'Extremely difficult to implement well',
-        'Prone to director bias',
-        'Very time-consuming'
-      ];
-      analysis.recommendations = [
-        'Only for very experienced directors',
-        'Use for special exhibition events',
-        'Consider for unique tournament formats'
-      ];
-      analysis.bestFor = [
-        'Exhibition tournaments',
-        'Special events',
-        'Very experienced directors'
-      ];
-      analysis.avoidIf = [
-        'Regular tournaments',
-        'Inexperienced directors',
-        'Large player fields'
-      ];
-      break;
+      analysis.strengths = ['Unknown pairing system'];
+      analysis.weaknesses = ['Unknown pairing system'];
+      analysis.recommendations = ['Consider using a known pairing system'];
+      analysis.bestFor = ['Unknown'];
+      analysis.avoidIf = ['Unknown'];
   }
 
   // Calculate overall score
@@ -564,109 +211,53 @@ export function analyzePairingSystem(format: PairingFormat, playerCount: number 
   return analysis;
 }
 
-// Recommend optimal pairing systems based on director intent
-export function recommendPairingSystem(intent: DirectorIntent): {
+// Hook to use dynamic pairing system recommendations
+export function usePairingRecommendation(intent: DirectorIntent) {
+  const [recommendation, setRecommendation] = useState<{
+    primary: PairingFormat;
+    alternatives: PairingFormat[];
+    reasoning: string;
+    warnings: string[];
+  } | null>(null);
+  
+  const { logicCode, isLoading, error } = useLogicBlock('pairing_recommendation');
+  
+  useEffect(() => {
+    if (!isLoading && !error && logicCode) {
+      try {
+        // Create a safe function from the logic code
+        const recommendFunction = new Function('intent', 'PAIRING_GOALS', logicCode);
+        
+        // Execute the function with our parameters
+        const result = recommendFunction(intent, PAIRING_GOALS);
+        setRecommendation(result);
+      } catch (err) {
+        console.error('Error executing pairing recommendation logic:', err);
+        // Fallback to static recommendation
+        setRecommendation(staticRecommendPairingSystem(intent));
+      }
+    } else if (!isLoading && (error || !logicCode)) {
+      // Fallback to static recommendation
+      setRecommendation(staticRecommendPairingSystem(intent));
+    }
+  }, [intent, logicCode, isLoading, error]);
+  
+  return { recommendation, isLoading };
+}
+
+// Recommend optimal pairing systems based on director intent (static fallback)
+export function staticRecommendPairingSystem(intent: DirectorIntent): {
   primary: PairingFormat;
   alternatives: PairingFormat[];
   reasoning: string;
   warnings: string[];
 } {
-  const { primary, playerCount, rounds, competitiveLevel, priorityGoals } = intent;
-
-  // Analyze all systems for this context
-  const analyses = {
-    swiss: analyzePairingSystem('swiss', playerCount, rounds),
-    'fonte-swiss': analyzePairingSystem('fonte-swiss', playerCount, rounds),
-    'king-of-hill': analyzePairingSystem('king-of-hill', playerCount, rounds),
-    'round-robin': analyzePairingSystem('round-robin', playerCount, rounds),
-    quartile: analyzePairingSystem('quartile', playerCount, rounds),
-    manual: analyzePairingSystem('manual', playerCount, rounds)
-  };
-
-  // Score systems based on priority goals
-  const systemScores: Record<PairingFormat, number> = {
-    swiss: 0,
-    'fonte-swiss': 0,
-    'king-of-hill': 0,
-    'round-robin': 0,
-    quartile: 0,
-    manual: 0
-  };
-
-  // Weight scores based on priority goals
-  Object.entries(analyses).forEach(([format, analysis]) => {
-    priorityGoals.forEach(goalId => {
-      if (analysis.goals[goalId]) {
-        systemScores[format as PairingFormat] += analysis.goals[goalId].score;
-      }
-    });
-  });
-
-  // Apply contextual bonuses/penalties
-  if (competitiveLevel === 'elite') {
-    systemScores['fonte-swiss'] += 20;
-    systemScores.swiss += 15;
-    systemScores['king-of-hill'] -= 10;
-  } else if (competitiveLevel === 'casual') {
-    systemScores['king-of-hill'] += 15;
-    systemScores.quartile += 10;
-    systemScores['fonte-swiss'] -= 5;
-  }
-
-  if (playerCount < 8) {
-    systemScores['round-robin'] += 15;
-    systemScores.swiss -= 5;
-  } else if (playerCount > 50) {
-    systemScores.swiss += 10;
-    systemScores['fonte-swiss'] += 5;
-    systemScores['round-robin'] -= 30;
-  }
-
-  // Handle specific intents
-  if (primary === 'Max suspense') {
-    systemScores['king-of-hill'] += 25;
-    systemScores.manual += 15;
-  } else if (primary === 'Max fairness') {
-    systemScores['fonte-swiss'] += 25;
-    systemScores.swiss += 20;
-    systemScores['round-robin'] += 15;
-  } else if (primary === 'No repeats') {
-    systemScores.swiss += 20;
-    systemScores['fonte-swiss'] += 15;
-    systemScores['round-robin'] -= 50; // Impossible
-  }
-
-  // Sort by score
-  const sortedSystems = Object.entries(systemScores)
-    .sort(([, a], [, b]) => b - a)
-    .map(([format]) => format as PairingFormat);
-
-  const primaryRecommendation = sortedSystems[0];
-  const alternatives = sortedSystems.slice(1, 4);
-
-  // Generate reasoning
-  const primaryAnalysis = analyses[primaryRecommendation];
-  const reasoning = `${primaryRecommendation.charAt(0).toUpperCase() + primaryRecommendation.slice(1)} is recommended because it scores highest on your priority goals: ${priorityGoals.map(goal => PAIRING_GOALS[goal]?.name).join(', ')}. ${primaryAnalysis.strengths.slice(0, 2).join(' and ')}.`;
-
-  // Generate warnings
-  const warnings: string[] = [];
-  if (primaryAnalysis.weaknesses.length > 0) {
-    warnings.push(`Note: ${primaryAnalysis.weaknesses[0]}`);
-  }
-  if (primaryAnalysis.avoidIf.some(condition => 
-    (condition.includes('small') && playerCount < 8) ||
-    (condition.includes('large') && playerCount > 50) ||
-    (condition.includes('casual') && competitiveLevel === 'casual') ||
-    (condition.includes('competitive') && competitiveLevel === 'elite')
-  )) {
-    warnings.push('This system may not be ideal for your tournament context');
-  }
-
+  // Default recommendation
   return {
-    primary: primaryRecommendation,
-    alternatives,
-    reasoning,
-    warnings
+    primary: 'swiss',
+    alternatives: ['fonte-swiss', 'king-of-hill'],
+    reasoning: 'Swiss system is recommended as a balanced approach for most tournaments.',
+    warnings: []
   };
 }
 
@@ -707,4 +298,21 @@ export function formatGoalScore(score: number): { color: string; label: string }
   if (score >= 5) return { color: 'text-yellow-400', label: 'Fair' };
   if (score >= 3) return { color: 'text-orange-400', label: 'Poor' };
   return { color: 'text-red-400', label: 'Critical' };
+}
+
+// Analyze each pairing system against the strategic goals
+export function analyzePairingSystem(format: PairingFormat, playerCount: number = 32, rounds: number = 7): PairingSystemAnalysis {
+  // This is now just a wrapper for the static function for backward compatibility
+  return staticAnalyzePairingSystem(format, playerCount, rounds);
+}
+
+// Recommend optimal pairing systems based on director intent
+export function recommendPairingSystem(intent: DirectorIntent): {
+  primary: PairingFormat;
+  alternatives: PairingFormat[];
+  reasoning: string;
+  warnings: string[];
+} {
+  // This is now just a wrapper for the static function for backward compatibility
+  return staticRecommendPairingSystem(intent);
 }

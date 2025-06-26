@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Plus, FolderOpen, LogOut, Settings, Share2, QrCode } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import ParticleBackground from './components/ParticleBackground';
@@ -13,13 +13,15 @@ import UserDashboard from './components/UserDashboard';
 import TournamentSetupModal from './components/TournamentSetupModal';
 import TournamentResume from './components/TournamentResume';
 import PublicTournamentView from './components/PublicTournamentView';
-import ProjectionMode from './components/ProjectionMode';
-import QRCodeModal from './components/QRCodeModal';
 import LandingPage from './components/LandingPage';
 import TournamentControlCenter from './components/TournamentControlCenter';
 import { supabase } from './lib/supabase';
 import { useTournamentProgress } from './hooks/useTournamentProgress';
 import type { User } from '@supabase/supabase-js';
+
+// Lazy-loaded components
+const ProjectionMode = React.lazy(() => import('./components/ProjectionMode'));
+const QRCodeModal = React.lazy(() => import('./components/QRCodeModal'));
 
 type Screen = 'home' | 'dashboard' | 'resume' | 'player-registration' | 'round-manager' | 'score-entry' | 'standings' | 'admin-panel';
 
@@ -503,13 +505,19 @@ function HomePage() {
       />
 
       {/* QR Code Modal */}
-      {currentTournamentId && (
-        <QRCodeModal
-          isOpen={showQRModal}
-          onClose={() => setShowQRModal(false)}
-          tournamentId={currentTournamentId}
-          tournamentName={currentTournamentName}
-        />
+      {currentTournamentId && showQRModal && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          </div>
+        }>
+          <QRCodeModal
+            isOpen={showQRModal}
+            onClose={() => setShowQRModal(false)}
+            tournamentId={currentTournamentId}
+            tournamentName={currentTournamentName}
+          />
+        </Suspense>
       )}
 
       {/* Additional Background Effects */}
@@ -529,7 +537,15 @@ function PublicTournamentRoute() {
 
 // Projection Mode Route Component
 function ProjectionModeRoute() {
-  return <ProjectionMode />;
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    }>
+      <ProjectionMode />
+    </Suspense>
+  );
 }
 
 // Auth Route Component

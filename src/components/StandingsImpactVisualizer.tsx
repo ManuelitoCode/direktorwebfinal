@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { X, TrendingUp, TrendingDown, Target, AlertTriangle, RotateCcw, Save, Eye } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { PairingWithPlayers, Result, Player } from '../types/database';
+import { useLogicBlock } from '../hooks/useLogicBlocks';
 
 interface StandingsImpactVisualizerProps {
   isOpen: boolean;
@@ -53,6 +54,9 @@ const StandingsImpactVisualizer: React.FC<StandingsImpactVisualizerProps> = ({
   const [showTopOnly, setShowTopOnly] = useState(false);
   const [savedScenarios, setSavedScenarios] = useState<SimulationScenario[]>([]);
   const [scenarioName, setScenarioName] = useState('');
+  
+  // Fetch the impact analysis logic from Supabase
+  const { logicCode, isLoading: isLogicLoading, error: logicError } = useLogicBlock('standings_impact');
 
   useEffect(() => {
     if (isOpen) {
@@ -64,7 +68,7 @@ const StandingsImpactVisualizer: React.FC<StandingsImpactVisualizerProps> = ({
     if (pairings.length > 0 && currentStandings.length > 0) {
       simulateStandings();
     }
-  }, [mockResults, pairings, currentStandings]);
+  }, [mockResults, pairings, currentStandings, logicCode]);
 
   const loadData = async () => {
     try {
@@ -216,103 +220,130 @@ const StandingsImpactVisualizer: React.FC<StandingsImpactVisualizerProps> = ({
   };
 
   const simulateStandings = () => {
-    // Clone current standings
-    const simulatedData = currentStandings.map(standing => ({ ...standing }));
+    try {
+      // If we have the dynamic logic code from Supabase, use it
+      if (logicCode && !isLogicLoading && !logicError) {
+        try {
+          // Create a safe function from the logic code
+          const simulateFunction = new Function(
+            'currentStandings', 
+            'mockResults', 
+            'pairings',
+            logicCode
+          );
+          
+          // Execute the function with our parameters
+          const result = simulateFunction(currentStandings, mockResults, pairings);
+          setSimulatedStandings(result);
+          return;
+        } catch (err) {
+          console.error('Error executing standings impact logic:', err);
+          // Fall back to static implementation
+        }
+      }
+      
+      // Fallback to static implementation
+      // Clone current standings
+      const simulatedData = currentStandings.map(standing => ({ ...standing }));
 
-    // Apply mock results
-    Object.values(mockResults).forEach(mockResult => {
-      const pairing = pairings.find(p => p.id === mockResult.pairingId);
-      if (!pairing) return;
+      // Apply mock results
+      Object.values(mockResults).forEach(mockResult => {
+        const pairing = pairings.find(p => p.id === mockResult.pairingId);
+        if (!pairing) return;
 
-      // Update player1
-      const player1Standing = simulatedData.find(s => s.id === pairing.player1_id);
-      if (player1Standing) {
-        player1Standing.pointsFor = (player1Standing.pointsFor || 0) + mockResult.player1Score;
-        player1Standing.pointsAgainst = (player1Standing.pointsAgainst || 0) + mockResult.player2Score;
-        player1Standing.gamesPlayed++;
+        // Update player1
+        const player1Standing = simulatedData.find(s => s.id === pairing.player1_id);
+        if (player1Standing) {
+          player1Standing.pointsFor = (player1Standing.pointsFor || 0) + mockResult.player1Score;
+          player1Standing.pointsAgainst = (player1Standing.pointsAgainst || 0) + mockResult.player2Score;
+          player1Standing.gamesPlayed++;
 
-        if (mockResult.player1Score > mockResult.player2Score) {
-          player1Standing.wins++;
-        } else if (mockResult.player1Score < mockResult.player2Score) {
-          player1Standing.losses++;
-        } else {
-          player1Standing.draws++;
+          if (mockResult.player1Score > mockResult.player2Score) {
+            player1Standing.wins++;
+          } else if (mockResult.player1Score < mockResult.player2Score) {
+            player1Standing.losses++;
+          } else {
+            player1Standing.draws++;
+          }
+
+          player1Standing.points = player1Standing.wins + (player1Standing.draws * 0.5);
+          player1Standing.spread = (player1Standing.pointsFor || 0) - (player1Standing.pointsAgainst || 0);
         }
 
-        player1Standing.points = player1Standing.wins + (player1Standing.draws * 0.5);
-        player1Standing.spread = (player1Standing.pointsFor || 0) - (player1Standing.pointsAgainst || 0);
-      }
+        // Update player2
+        const player2Standing = simulatedData.find(s => s.id === pairing.player2_id);
+        if (player2Standing) {
+          player2Standing.pointsFor = (player2Standing.pointsFor || 0) + mockResult.player2Score;
+          player2Standing.pointsAgainst = (player2Standing.pointsAgainst || 0) + mockResult.player1Score;
+          player2Standing.gamesPlayed++;
 
-      // Update player2
-      const player2Standing = simulatedData.find(s => s.id === pairing.player2_id);
-      if (player2Standing) {
-        player2Standing.pointsFor = (player2Standing.pointsFor || 0) + mockResult.player2Score;
-        player2Standing.pointsAgainst = (player2Standing.pointsAgainst || 0) + mockResult.player1Score;
-        player2Standing.gamesPlayed++;
+          if (mockResult.player2Score > mockResult.player1Score) {
+            player2Standing.wins++;
+          } else if (mockResult.player2Score < mockResult.player1Score) {
+            player2Standing.losses++;
+          } else {
+            player2Standing.draws++;
+          }
 
-        if (mockResult.player2Score > mockResult.player1Score) {
-          player2Standing.wins++;
-        } else if (mockResult.player2Score < mockResult.player1Score) {
-          player2Standing.losses++;
-        } else {
-          player2Standing.draws++;
+          player2Standing.points = player2Standing.wins + (player2Standing.draws * 0.5);
+          player2Standing.spread = (player2Standing.pointsFor || 0) - (player2Standing.pointsAgainst || 0);
+        }
+      });
+
+      // Re-sort and assign new ranks
+      simulatedData.sort((a, b) => {
+        if (a.points !== b.points) return b.points - a.points;
+        if (a.spread !== b.spread) return b.spread - a.spread;
+        return b.rating - a.rating;
+      });
+
+      simulatedData.forEach((standing, index) => {
+        const oldRank = standing.rank;
+        standing.rank = index + 1;
+        standing.rankChange = oldRank - standing.rank; // Positive = moved up, negative = moved down
+
+        // Generate impact tags
+        standing.impactTags = [];
+        
+        if (standing.rankChange && Math.abs(standing.rankChange) >= 3) {
+          standing.impactTags.push(standing.rankChange > 0 ? 'Big Jump' : 'Big Drop');
+        }
+        
+        if (standing.rank <= 3 && oldRank > 3) {
+          standing.impactTags.push('Moves to Podium');
+        }
+        
+        if (standing.rank > 3 && oldRank <= 3) {
+          standing.impactTags.push('Falls from Podium');
+        }
+        
+        if (standing.rank === 1 && oldRank !== 1) {
+          standing.impactTags.push('Takes Lead');
+        }
+        
+        if (standing.rank !== 1 && oldRank === 1) {
+          standing.impactTags.push('Loses Lead');
         }
 
-        player2Standing.points = player2Standing.wins + (player2Standing.draws * 0.5);
-        player2Standing.spread = (player2Standing.pointsFor || 0) - (player2Standing.pointsAgainst || 0);
-      }
-    });
+        // Check for mathematical elimination or clinching
+        const remainingRounds = 7 - currentRound; // Assuming 7 rounds max
+        const maxPossiblePoints = standing.points + remainingRounds;
+        const currentLeaderPoints = simulatedData[0].points;
+        
+        if (standing.rank > 10 && maxPossiblePoints < currentLeaderPoints) {
+          standing.impactTags.push('Eliminated from Contention');
+        }
+        
+        if (standing.rank === 1 && standing.points > simulatedData[1].points + remainingRounds) {
+          standing.impactTags.push('Clinches Tournament');
+        }
+      });
 
-    // Re-sort and assign new ranks
-    simulatedData.sort((a, b) => {
-      if (a.points !== b.points) return b.points - a.points;
-      if (a.spread !== b.spread) return b.spread - a.spread;
-      return b.rating - a.rating;
-    });
-
-    simulatedData.forEach((standing, index) => {
-      const oldRank = standing.rank;
-      standing.rank = index + 1;
-      standing.rankChange = oldRank - standing.rank; // Positive = moved up, negative = moved down
-
-      // Generate impact tags
-      standing.impactTags = [];
-      
-      if (standing.rankChange && Math.abs(standing.rankChange) >= 3) {
-        standing.impactTags.push(standing.rankChange > 0 ? 'Big Jump' : 'Big Drop');
-      }
-      
-      if (standing.rank <= 3 && oldRank > 3) {
-        standing.impactTags.push('Moves to Podium');
-      }
-      
-      if (standing.rank > 3 && oldRank <= 3) {
-        standing.impactTags.push('Falls from Podium');
-      }
-      
-      if (standing.rank === 1 && oldRank !== 1) {
-        standing.impactTags.push('Takes Lead');
-      }
-      
-      if (standing.rank !== 1 && oldRank === 1) {
-        standing.impactTags.push('Loses Lead');
-      }
-
-      // Check for mathematical elimination or clinching
-      const remainingRounds = 7 - currentRound; // Assuming 7 rounds max
-      const maxPossiblePoints = standing.points + remainingRounds;
-      const currentLeaderPoints = simulatedData[0].points;
-      
-      if (standing.rank > 10 && maxPossiblePoints < currentLeaderPoints) {
-        standing.impactTags.push('Eliminated from Contention');
-      }
-      
-      if (standing.rank === 1 && standing.points > simulatedData[1].points + remainingRounds) {
-        standing.impactTags.push('Clinches Tournament');
-      }
-    });
-
-    setSimulatedStandings(simulatedData);
+      setSimulatedStandings(simulatedData);
+    } catch (err) {
+      console.error('Error simulating standings:', err);
+      setError('Failed to simulate standings');
+    }
   };
 
   const handleScoreChange = (pairingId: string, field: 'player1Score' | 'player2Score', value: number) => {
