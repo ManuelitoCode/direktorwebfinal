@@ -92,6 +92,7 @@ export interface PairingWithPlayers extends Pairing {
 export interface Result {
   id?: string;
   pairing_id: string;
+  tournament_id: string; // Added tournament_id for direct relationship
   round_number: number;
   player1_score: number;
   player2_score: number;

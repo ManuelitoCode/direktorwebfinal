@@ -215,9 +215,10 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({
     setError(null);
 
     try {
-      // Prepare results data
+      // Prepare results data with tournament_id
       const resultsToInsert: Omit<Result, 'id' | 'created_at'>[] = Object.values(scores).map(score => ({
         pairing_id: score.pairingId,
+        tournament_id: tournamentId, // Include tournament_id for direct relationship
         round_number: currentRound,
         player1_score: Number(score.player1Score),
         player2_score: Number(score.player2Score),
@@ -230,7 +231,7 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({
         .from('results')
         .delete()
         .eq('round_number', currentRound)
-        .in('pairing_id', Object.keys(scores));
+        .eq('tournament_id', tournamentId);
 
       // Insert new results
       const { error: insertError } = await supabase
