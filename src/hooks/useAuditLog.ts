@@ -25,14 +25,14 @@ export function useAuditLog() {
         }]);
 
       if (error) {
-        console.error('Failed to log audit action:', error);
+        console.error('Failed to log audit entry:', error);
       }
     } catch (err) {
-      console.error('Error logging audit action:', err);
+      console.error('Error logging audit entry:', err);
     }
   };
 
-  const getAuditLogs = async (limit = 100) => {
+  const getAuditLogs = async (limit: number = 100) => {
     try {
       const { data, error } = await supabase
         .from('audit_logs')

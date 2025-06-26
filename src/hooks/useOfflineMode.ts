@@ -17,9 +17,7 @@ export function useOfflineMode() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      if (isOfflineMode) {
-        syncPendingChanges();
-      }
+      syncPendingChanges();
     };
 
     const handleOffline = () => {
@@ -35,11 +33,11 @@ export function useOfflineMode() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [isOfflineMode]);
+  }, []);
 
   const showOfflineToast = () => {
     const toast = document.createElement('div');
-    toast.className = 'fixed top-4 right-4 z-50 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-yellow-500/50';
+    toast.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-yellow-500/50';
     toast.innerHTML = `
       <div class="flex items-center gap-2">
         <div class="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
@@ -49,14 +47,12 @@ export function useOfflineMode() {
     document.body.appendChild(toast);
     
     // Keep toast visible while offline
-    const checkOnline = () => {
+    const checkOnline = setInterval(() => {
       if (navigator.onLine) {
+        clearInterval(checkOnline);
         if (document.body.contains(toast)) {
           document.body.removeChild(toast);
         }
-      } else {
-        setTimeout(checkOnline, 1000);
-      }
-    I'll implement all four production-level upgrades for the Direktor app. Let me start with the database migrations and then implement the features systematically.
+      }I'll implement all four production-level upgrades while preserving the existing functionality and design system. Let me start with the database migrations and then move through each enhancement.
 
 <boltArtifact id="production-upgrades" title="Production-Level Upgrades for Direktor">
