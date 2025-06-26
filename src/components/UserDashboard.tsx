@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Trophy, User, Camera, Save, ArrowLeft, Shield, Users, Target, Plus, Eye, History } from 'lucide-react';
+import { Settings, Trophy, User, Camera, Save, ArrowLeft, Shield, Users, Target, Plus, Eye, History, Edit } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
@@ -32,6 +32,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigateToTournam
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showTournamentModal, setShowTournamentModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [hasExistingTournaments, setHasExistingTournaments] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
@@ -259,6 +260,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigateToTournam
       // Reload profile
       await loadUserProfile();
       setSuccessMessage('Profile updated successfully!');
+      setShowProfileModal(false);
       
       setTimeout(() => setSuccessMessage(null), 3000);
       
@@ -314,6 +316,20 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigateToTournam
   const handleResumeTournament = (tournamentId: string, currentRound: number) => {
     // This will be handled by the parent component
     onNavigateToTournaments();
+  };
+
+  const openProfileModal = () => {
+    setShowProfileModal(true);
+    setError(null);
+    setFormData({
+      username: profile?.username || user.email || '',
+      nickname: profile?.nickname || ''
+    });
+  };
+
+  const closeProfileModal = () => {
+    setShowProfileModal(false);
+    setError(null);
   };
 
   if (isLoading) {
@@ -549,55 +565,150 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigateToTournam
                 </div>
               </div>
 
-              {/* Profile Settings Card */}
+              {/* Profile Card */}
               <div 
-                className="bg-gray-900/50 border border-purple-500/30 rounded-2xl p-8 backdrop-blur-lg hover:bg-gray-800/50 hover:border-purple-400/50 hover:scale-105 transition-all duration-300 group cursor-pointer focus:outline-none focus:ring-4 focus:ring-purple-500/50 focus:border-purple-400"
-                onClick={() => setActiveSection('profile')}
-                onKeyDown={(e) => handleCardKeyDown(e, () => setActiveSection('profile'))}
-                tabIndex={0}
-                role="button"
-                aria-label="Navigate to Profile Settings - Edit your display name, nickname, and avatar"
+                className="bg-gray-900/50 border border-purple-500/30 rounded-2xl p-8 backdrop-blur-lg hover:bg-gray-800/50 hover:border-purple-400/50 transition-all duration-300 group relative"
                 style={{
                   boxShadow: '0 0 30px rgba(147, 51, 234, 0.2)'
                 }}
               >
                 <div className="text-center">
-                  <div className="w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
-                    <Settings className="w-10 h-10 text-white" />
+                  {/* Profile Avatar */}
+                  <div className="w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 overflow-hidden">
+                    {profile?.avatar_url ? (
+                      <img
+                        src={profile.avatar_url}
+                        alt="Profile Avatar"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <User className="w-10 h-10 text-white" />
+                    )}
                   </div>
                   
-                  <h3 className="text-2xl font-bold text-white font-orbitron mb-4 group-hover:text-purple-300 transition-colors duration-300">
-                    Profile Settings
-                  </h3>
+                  {/* Profile Info */}
+                  <div className="mb-6">
+                    <h3 className="text-2xl font-bold text-white font-orbitron mb-2">
+                      {profile?.username || user.email}
+                    </h3>
+                    
+                    <p className="text-gray-400 font-jetbrains text-sm mb-2">
+                      {user.email}
+                    </p>
+                    
+                    {profile?.nickname && (
+                      <p className="text-purple-300 font-jetbrains text-sm">
+                        "{profile.nickname}"
+                      </p>
+                    )}
+                  </div>
                   
-                  <p className="text-gray-400 font-jetbrains mb-6 leading-relaxed">
-                    Edit your display name, nickname, avatar
-                  </p>
-                  
-                  <div className="flex items-center justify-center gap-4 text-sm text-purple-400">
+                  {/* Profile Stats */}
+                  <div className="flex items-center justify-center gap-4 text-sm text-purple-400 mb-6">
                     <div className="flex items-center gap-1">
                       <User className="w-4 h-4" />
-                      <span>Personal Info</span>
+                      <span>Profile</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Shield className="w-4 h-4" />
-                      <span>Privacy</span>
+                      <span>Verified</span>
                     </div>
                   </div>
                 </div>
+
+                {/* Settings Gear Icon */}
+                <button
+                  onClick={openProfileModal}
+                  className="absolute bottom-4 right-4 w-10 h-10 bg-purple-600/20 border border-purple-500/50 rounded-lg flex items-center justify-center text-purple-400 hover:bg-purple-600/30 hover:text-white hover:border-purple-400 transition-all duration-200 group/gear"
+                  title="Edit Profile"
+                  aria-label="Edit Profile Settings"
+                >
+                  <Settings className="w-5 h-5 group-hover/gear:rotate-90 transition-transform duration-300" />
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Profile Settings Content */}
-        {activeSection === 'profile' && (
-          <div className="fade-up max-w-4xl mx-auto w-full mb-8">
-            <div className="bg-gray-900/50 border border-purple-500/30 rounded-2xl p-8 backdrop-blur-lg"
-                 style={{
-                   boxShadow: '0 0 30px rgba(147, 51, 234, 0.2)'
-                 }}>
+        {/* All Tournaments Content */}
+        {activeSection === 'tournaments' && (
+          <AllTournamentsView user={user} />
+        )}
+
+        {/* Resume Tournament Content */}
+        {activeSection === 'resume-tournament' && (
+          <div className="fade-up max-w-6xl mx-auto w-full mb-8">
+            <TournamentResume
+              onNewTournament={handleNewTournament}
+              onResumeTournament={handleResumeTournament}
+            />
+          </div>
+        )}
+
+        {/* Tournament History Content */}
+        {activeSection === 'history' && (
+          <TournamentHistoryView user={user} />
+        )}
+
+        {/* Footer */}
+        <footer className="fade-up text-center mt-auto">
+          <p className="text-gray-500 text-sm font-light tracking-wider">
+            {activeSection === 'dashboard' 
+              ? 'Your personal tournament management hub'
+              : activeSection === 'profile'
+              ? 'Manage your profile and account settings'
+              : activeSection === 'tournaments'
+              ? 'View and manage all your tournaments'
+              : activeSection === 'resume-tournament'
+              ? 'Resume or manage your tournaments'
+              : 'Browse your completed tournament archives'
+            }
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '1s' }}></div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Profile Edit Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={closeProfileModal}
+          />
+          
+          {/* Modal */}
+          <div className="relative w-full max-w-2xl bg-gray-900/95 backdrop-blur-lg border-2 border-purple-500/50 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b-2 border-purple-500/30 bg-gradient-to-r from-purple-900/30 to-pink-900/30">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                  <Edit className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white font-orbitron">
+                    Edit Profile Settings
+                  </h2>
+                  <p className="text-purple-300 font-jetbrains">
+                    Update your profile information
+                  </p>
+                </div>
+              </div>
               
+              <button
+                onClick={closeProfileModal}
+                className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-all duration-200"
+              >
+                <ArrowLeft size={24} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
               {/* Avatar Section */}
               <div className="text-center mb-8">
                 <div className="relative inline-block">
@@ -668,62 +779,44 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ user, onNavigateToTournam
                   </p>
                 </div>
 
-                <div className="pt-4">
-                  <Button
-                    icon={Save}
-                    label={isSaving ? 'Saving...' : 'Save Profile'}
+                {/* Error Display */}
+                {error && (
+                  <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-4 text-red-300 font-jetbrains text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-4 pt-4">
+                  <button
+                    onClick={closeProfileModal}
+                    className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
                     onClick={handleSaveProfile}
-                    variant="blue"
-                    className="max-w-sm mx-auto"
                     disabled={isSaving}
-                  />
+                    className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                  >
+                    {isSaving ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={16} />
+                        Save Profile
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-        )}
-
-        {/* All Tournaments Content */}
-        {activeSection === 'tournaments' && (
-          <AllTournamentsView user={user} />
-        )}
-
-        {/* Resume Tournament Content */}
-        {activeSection === 'resume-tournament' && (
-          <div className="fade-up max-w-6xl mx-auto w-full mb-8">
-            <TournamentResume
-              onNewTournament={handleNewTournament}
-              onResumeTournament={handleResumeTournament}
-            />
-          </div>
-        )}
-
-        {/* Tournament History Content */}
-        {activeSection === 'history' && (
-          <TournamentHistoryView user={user} />
-        )}
-
-        {/* Footer */}
-        <footer className="fade-up text-center mt-auto">
-          <p className="text-gray-500 text-sm font-light tracking-wider">
-            {activeSection === 'dashboard' 
-              ? 'Your personal tournament management hub'
-              : activeSection === 'profile'
-              ? 'Manage your profile and account settings'
-              : activeSection === 'tournaments'
-              ? 'View and manage all your tournaments'
-              : activeSection === 'resume-tournament'
-              ? 'Resume or manage your tournaments'
-              : 'Browse your completed tournament archives'
-            }
-          </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
-            <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '1s' }}></div>
-          </div>
-        </footer>
-      </div>
+        </div>
+      )}
 
       {/* Tournament Setup Modal */}
       <TournamentSetupModal
