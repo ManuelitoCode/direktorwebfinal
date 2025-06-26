@@ -127,37 +127,72 @@ function HomePage() {
   };
 
   const handleTournamentCreated = async (tournamentId: string) => {
-    // Load tournament name for QR code
-    const { data: tournamentData } = await supabase
-      .from('tournaments')
-      .select('name')
-      .eq('id', tournamentId)
-      .single();
+    try {
+      // Load tournament name for QR code
+      const { data: tournamentData } = await supabase
+        .from('tournaments')
+        .select('name')
+        .eq('id', tournamentId)
+        .single();
 
-    setCurrentTournamentId(tournamentId);
-    setCurrentTournamentName(tournamentData?.name || 'Tournament');
-    setCurrentScreen('player-registration');
-    setShowTournamentModal(false);
-    
-    // Update tournament status to registration
-    await setTournamentStatus(tournamentId, 'registration');
+      setCurrentTournamentId(tournamentId);
+      setCurrentTournamentName(tournamentData?.name || 'Tournament');
+      setShowTournamentModal(false);
+      
+      // Navigate directly to player registration
+      setCurrentScreen('player-registration');
+      
+      // Update tournament status to registration
+      await setTournamentStatus(tournamentId, 'registration');
+    } catch (err) {
+      console.error('Error loading tournament after creation:', err);
+      // Show error toast
+      const toast = document.createElement('div');
+      toast.className = 'fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg font-jetbrains text-sm';
+      toast.textContent = 'Tournament created but failed to load details. Please try refreshing.';
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 5000);
+    }
   };
 
   const handleResumeTournament = async (tournamentId: string, round: number) => {
-    // Load tournament name for QR code
-    const { data: tournamentData } = await supabase
-      .from('tournaments')
-      .select('name')
-      .eq('id', tournamentId)
-      .single();
+    try {
+      // Load tournament name for QR code
+      const { data: tournamentData } = await supabase
+        .from('tournaments')
+        .select('name, status')
+        .eq('id', tournamentId)
+        .single();
 
-    setCurrentTournamentId(tournamentId);
-    setCurrentTournamentName(tournamentData?.name || 'Tournament');
-    setCurrentRound(round);
-    
-    // Determine which screen to show based on tournament progress
-    // For now, default to round manager - could be enhanced with more logic
-    setCurrentScreen('round-manager');
+      setCurrentTournamentId(tournamentId);
+      setCurrentTournamentName(tournamentData?.name || 'Tournament');
+      setCurrentRound(round);
+      
+      // Determine which screen to show based on tournament status
+      const status = tournamentData?.status;
+      if (status === 'registration') {
+        setCurrentScreen('player-registration');
+      } else if (status === 'active') {
+        setCurrentScreen('round-manager');
+      } else {
+        // Default to round manager for other statuses
+        setCurrentScreen('round-manager');
+      }
+    } catch (err) {
+      console.error('Error resuming tournament:', err);
+      // Show error toast
+      const toast = document.createElement('div');
+      toast.className = 'fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg font-jetbrains text-sm';
+      toast.textContent = 'Failed to load tournament details. Please try again.';
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 5000);
+    }
   };
 
   const handleAdminPanel = () => {
