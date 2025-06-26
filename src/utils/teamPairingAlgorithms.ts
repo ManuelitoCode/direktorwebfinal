@@ -98,16 +98,17 @@ function generateRoundRobinSchedule(teams: string[]): Array<Array<{ team1: strin
   }
   
   const totalRounds = teams.length - 1;
+  const teamsForScheduling = [...teams]; // Create a copy to manipulate
   
   for (let round = 0; round < totalRounds; round++) {
     const roundMatchups: Array<{ team1: string; team2: string }> = [];
     
-    for (let i = 0; i < teams.length / 2; i++) {
+    for (let i = 0; i < teamsForScheduling.length / 2; i++) {
       const team1Index = i;
-      const team2Index = teams.length - 1 - i;
+      const team2Index = teamsForScheduling.length - 1 - i;
       
-      const team1 = teams[team1Index];
-      const team2 = teams[team2Index];
+      const team1 = teamsForScheduling[team1Index];
+      const team2 = teamsForScheduling[team2Index];
       
       // Skip if one team is "BYE"
       if (team1 !== 'BYE' && team2 !== 'BYE') {
@@ -118,9 +119,9 @@ function generateRoundRobinSchedule(teams: string[]): Array<Array<{ team1: strin
     schedule.push(roundMatchups);
     
     // Rotate teams (keep first team fixed, rotate others)
-    if (teams.length > 2) {
-      const lastTeam = teams.pop()!;
-      teams.splice(1, 0, lastTeam);
+    if (teamsForScheduling.length > 2) {
+      const lastTeam = teamsForScheduling.pop()!;
+      teamsForScheduling.splice(1, 0, lastTeam);
     }
   }
   

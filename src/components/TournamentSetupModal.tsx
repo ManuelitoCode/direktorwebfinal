@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck } from 'lucide-react';
+import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { WizardResponses, TournamentConfig, PairingFormat } from '../types/database';
 import { recommendPairingSystem } from '../utils/pairingStrategyIntelligence';
@@ -17,7 +17,7 @@ interface FormData {
   rounds: number;
   divisions: number;
   divisionNames: string[];
-  teamMode: boolean; // Added for team mode
+  teamMode: boolean;
 }
 
 interface WizardStep {
@@ -32,23 +32,6 @@ interface WizardStep {
 }
 
 const WIZARD_STEPS: WizardStep[] = [
-  {
-    id: 'tournamentType',
-    question: 'What type of tournament are you running?',
-    description: 'Choose between individual or team-based competition',
-    options: [
-      {
-        value: 'individual',
-        label: 'Individual Tournament',
-        description: 'Players compete individually for rankings and prizes'
-      },
-      {
-        value: 'team',
-        label: 'Team Tournament',
-        description: 'Players are grouped into teams that compete against each other'
-      }
-    ]
-  },
   {
     id: 'topPlayersMeeting',
     question: 'When should the top players meet?',
@@ -134,12 +117,50 @@ const WIZARD_STEPS: WizardStep[] = [
   }
 ];
 
+const PAIRING_FORMATS: Array<{
+  id: PairingFormat;
+  name: string;
+  description: string;
+  bestFor: string;
+}> = [
+  {
+    id: 'swiss',
+    name: 'Swiss System',
+    description: 'Standard tournament format pairing players with similar records',
+    bestFor: 'Most competitive tournaments'
+  },
+  {
+    id: 'fonte-swiss',
+    name: 'Fonte-Swiss',
+    description: 'Advanced Swiss with score-group pairing for maximum fairness',
+    bestFor: 'Elite competitive events'
+  },
+  {
+    id: 'king-of-hill',
+    name: 'King of the Hill',
+    description: 'Highest vs lowest ranked players for maximum suspense',
+    bestFor: 'Casual, exciting tournaments'
+  },
+  {
+    id: 'round-robin',
+    name: 'Round Robin',
+    description: 'Every player plays every other player once',
+    bestFor: 'Small tournaments (8 players or fewer)'
+  },
+  {
+    id: 'quartile',
+    name: 'Quartile Pairing',
+    description: 'Split players into quartiles and pair within groups',
+    bestFor: 'Mixed-skill recreational events'
+  }
+];
+
 const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
   isOpen,
   onClose,
   onSuccess
 }) => {
-  const [currentStep, setCurrentStep] = useState<'basic' | 'wizard' | 'review'>('basic');
+  const [currentStep, setCurrentStep] = useState<'basic' | 'pairing-method' | 'wizard' | 'manual-selection' | 'review'>('basic');
   const [wizardStepIndex, setWizardStepIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +178,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
 
   // Wizard responses
   const [wizardResponses, setWizardResponses] = useState<Partial<WizardResponses>>({});
+  const [selectedPairingFormat, setSelectedPairingFormat] = useState<PairingFormat>('swiss');
   const [recommendedSystem, setRecommendedSystem] = useState<PairingFormat>('swiss');
   const [recommendationReasoning, setRecommendationReasoning] = useState<string>('');
 
@@ -213,8 +235,24 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
   const handleBasicNext = () => {
     setError(null);
     if (validateBasicForm()) {
+      // If team mode is selected, skip pairing method selection and go directly to review
+      if (formData.teamMode) {
+        setSelectedPairingFormat('team-round-robin');
+        setRecommendedSystem('team-round-robin');
+        setRecommendationReasoning('Team Round-Robin is automatically selected for team-based tournaments, ensuring each team plays every other team with all possible player matchups.');
+        setCurrentStep('review');
+      } else {
+        setCurrentStep('pairing-method');
+      }
+    }
+  };
+
+  const handlePairingMethodSelection = (method: 'wizard' | 'manual') => {
+    if (method === 'wizard') {
       setCurrentStep('wizard');
       setWizardStepIndex(0);
+    } else {
+      setCurrentStep('manual-selection');
     }
   };
 
@@ -226,14 +264,6 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     };
     setWizardResponses(updatedResponses);
 
-    // Handle team mode selection
-    if (currentWizardStep.id === 'tournamentType') {
-      setFormData(prev => ({
-        ...prev,
-        teamMode: value === 'team'
-      }));
-    }
-
     if (wizardStepIndex < WIZARD_STEPS.length - 1) {
       setWizardStepIndex(wizardStepIndex + 1);
     } else {
@@ -241,6 +271,13 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       generateRecommendation(updatedResponses);
       setCurrentStep('review');
     }
+  };
+
+  const handleManualSelection = (format: PairingFormat) => {
+    setSelectedPairingFormat(format);
+    setRecommendedSystem(format);
+    setRecommendationReasoning(`You manually selected ${format.charAt(0).toUpperCase() + format.slice(1).replace('-', ' ')} as your preferred pairing system.`);
+    setCurrentStep('review');
   };
 
   const generateRecommendation = (responses: Partial<WizardResponses>) => {
@@ -260,13 +297,6 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     // Always include fairness as important
     priorityGoals.push('fairness');
 
-    // For team mode, recommend team-round-robin
-    if (formData.teamMode) {
-      setRecommendedSystem('team-round-robin');
-      setRecommendationReasoning('Team Round-Robin is recommended for team-based tournaments, ensuring each team plays every other team with all possible player matchups.');
-      return;
-    }
-
     const recommendation = recommendPairingSystem({
       primary: responses.suspenseUntilEnd === 'critical' ? 'Max suspense' : 'Max fairness',
       playerCount: 32, // Estimate
@@ -276,6 +306,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     });
 
     setRecommendedSystem(recommendation.primary);
+    setSelectedPairingFormat(recommendation.primary);
     setRecommendationReasoning(recommendation.reasoning);
   };
 
@@ -300,19 +331,19 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         director_id: user.id,
         status: 'registration' as const,
         team_mode: formData.teamMode,
-        pairing_system: recommendedSystem,
+        pairing_system: selectedPairingFormat,
         wizard_responses: {
           ...wizardResponses,
           topPlayersMeeting: wizardResponses.topPlayersMeeting || 'late',
           avoidRematches: wizardResponses.avoidRematches === 'yes',
-          avoidSameTeam: formData.teamMode, // Always true for team mode
+          avoidSameTeam: formData.teamMode,
           suspenseUntilEnd: wizardResponses.suspenseUntilEnd === 'critical',
           manualPairing: false,
           competitiveLevel: wizardResponses.competitiveLevel || 'competitive',
           primaryGoal: wizardResponses.suspenseUntilEnd === 'critical' ? 'Max suspense' : 'Max fairness'
         } as WizardResponses,
         tournament_config: {
-          pairing_system: recommendedSystem,
+          pairing_system: selectedPairingFormat,
           avoid_rematches: wizardResponses.avoidRematches === 'yes',
           wizard_completed: true,
           recommended_system: recommendedSystem,
@@ -379,6 +410,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       teamMode: false
     });
     setWizardResponses({});
+    setSelectedPairingFormat('swiss');
     setError(null);
     onClose();
   };
@@ -406,12 +438,16 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
             <div>
               <h2 className="text-2xl font-bold text-white font-orbitron">
                 {currentStep === 'basic' ? 'Create Tournament' :
+                 currentStep === 'pairing-method' ? 'Choose Pairing Method' :
                  currentStep === 'wizard' ? 'Tournament Setup Wizard' :
+                 currentStep === 'manual-selection' ? 'Select Pairing Format' :
                  'Review & Create'}
               </h2>
               <p className="text-blue-300 font-jetbrains">
                 {currentStep === 'basic' ? 'Set up your tournament details' :
+                 currentStep === 'pairing-method' ? 'AI recommendation or manual selection' :
                  currentStep === 'wizard' ? `Question ${wizardStepIndex + 1} of ${WIZARD_STEPS.length}` :
+                 currentStep === 'manual-selection' ? 'Choose your preferred pairing system' :
                  'Review your settings and create tournament'}
               </p>
             </div>
@@ -507,6 +543,39 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                 </div>
               </div>
 
+              {/* Team Mode Toggle */}
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <UserCheck className="w-6 h-6 text-blue-400" />
+                    <div>
+                      <h3 className="text-lg font-bold text-white font-orbitron">Team Mode</h3>
+                      <p className="text-blue-300 font-jetbrains text-sm">Enable team-based competition</p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleInputChange('teamMode', !formData.teamMode)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                      formData.teamMode ? 'bg-blue-600' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+                        formData.teamMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                {formData.teamMode && (
+                  <div className="text-blue-200 font-jetbrains text-sm">
+                    <p className="mb-2">✅ Team mode enabled - players will be grouped into teams</p>
+                    <p className="text-xs text-blue-300">Teams will compete against each other with automatic round-robin scheduling</p>
+                  </div>
+                )}
+              </div>
+
               {/* Division Names */}
               {formData.divisions > 1 && (
                 <div>
@@ -541,8 +610,78 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                   onClick={handleBasicNext}
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                 >
-                  <Brain size={16} />
-                  Continue to Setup Wizard
+                  <ArrowRight size={16} />
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Pairing Method Selection */}
+          {currentStep === 'pairing-method' && (
+            <div className="space-y-8">
+              <div className="text-center mb-8">
+                <h3 className="text-2xl font-bold text-white font-orbitron mb-2">
+                  Choose Your Pairing Method
+                </h3>
+                <p className="text-gray-400 font-jetbrains">
+                  How would you like to determine the best pairing system for your tournament?
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* AI Recommendation Option */}
+                <button
+                  onClick={() => handlePairingMethodSelection('wizard')}
+                  className="group p-8 bg-gradient-to-br from-purple-900/30 to-blue-900/30 border-2 border-purple-500/30 rounded-2xl hover:border-purple-400/50 hover:from-purple-900/40 hover:to-blue-900/40 transition-all duration-300 text-left"
+                >
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Brain className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-2xl font-bold text-white font-orbitron group-hover:text-purple-300 transition-colors duration-300">
+                        🤖 AI Recommendation
+                      </h4>
+                      <p className="text-purple-300 font-jetbrains">Intelligent pairing wizard</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-300 font-jetbrains mb-4 leading-relaxed">
+                    Answer a few strategic questions and let our AI recommend the optimal pairing system based on your tournament goals, player count, and competitive level.
+                  </p>
+                  
+                  <div className="flex items-center gap-2 text-purple-400 font-jetbrains text-sm">
+                    <Zap className="w-4 h-4" />
+                    <span>Recommended for most tournaments</span>
+                  </div>
+                </button>
+
+                {/* Manual Selection Option */}
+                <button
+                  onClick={() => handlePairingMethodSelection('manual')}
+                  className="group p-8 bg-gradient-to-br from-cyan-900/30 to-green-900/30 border-2 border-cyan-500/30 rounded-2xl hover:border-cyan-400/50 hover:from-cyan-900/40 hover:to-green-900/40 transition-all duration-300 text-left"
+                >
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-r from-cyan-500 to-green-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Target className="w-8 h-8 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-2xl font-bold text-white font-orbitron group-hover:text-cyan-300 transition-colors duration-300">
+                        🎯 Manual Selection
+                      </h4>
+                      <p className="text-cyan-300 font-jetbrains">Direct format choice</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-300 font-jetbrains mb-4 leading-relaxed">
+                    Browse and select from available pairing formats directly. Perfect if you already know which system you want to use for your tournament.
+                  </p>
+                  
+                  <div className="flex items-center gap-2 text-cyan-400 font-jetbrains text-sm">
+                    <Users className="w-4 h-4" />
+                    <span>For experienced tournament directors</span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -568,17 +707,10 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                     className="w-full p-6 bg-gray-800/50 border border-gray-600 rounded-lg hover:bg-gray-700/50 hover:border-blue-500/50 transition-all duration-200 text-left group"
                   >
                     <div className="flex items-start gap-4">
-                      <div className="w-6 h-6 border-2 border-gray-500 rounded-full group-hover:border-blue-400 transition-colors duration-200 flex-shrink-0 mt-1">
-                        {currentWizardStep.id === 'tournamentType' && option.value === 'team' && (
-                          <UserCheck className="w-4 h-4 text-blue-400 m-0.5" />
-                        )}
-                      </div>
+                      <div className="w-6 h-6 border-2 border-gray-500 rounded-full group-hover:border-blue-400 transition-colors duration-200 flex-shrink-0 mt-1"></div>
                       <div>
-                        <div className="text-white font-medium font-jetbrains mb-2 flex items-center gap-2">
+                        <div className="text-white font-medium font-jetbrains mb-2">
                           {option.label}
-                          {currentWizardStep.id === 'tournamentType' && option.value === 'team' && (
-                            <UserCheck className="w-4 h-4 text-blue-400" />
-                          )}
                         </div>
                         <div className="text-gray-400 font-jetbrains text-sm">
                           {option.description}
@@ -601,6 +733,42 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                     style={{ width: `${((wizardStepIndex + 1) / WIZARD_STEPS.length) * 100}%` }}
                   />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Selection */}
+          {currentStep === 'manual-selection' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h3 className="text-2xl font-bold text-white font-orbitron mb-2">
+                  Select Pairing Format
+                </h3>
+                <p className="text-gray-400 font-jetbrains">
+                  Choose the pairing system that best fits your tournament
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {PAIRING_FORMATS.map((format) => (
+                  <button
+                    key={format.id}
+                    onClick={() => handleManualSelection(format.id)}
+                    className="p-6 bg-gray-800/50 border border-gray-600 rounded-lg hover:bg-gray-700/50 hover:border-cyan-500/50 transition-all duration-200 text-left group"
+                  >
+                    <div className="mb-4">
+                      <h4 className="text-lg font-bold text-white font-orbitron mb-2 group-hover:text-cyan-300 transition-colors duration-200">
+                        {format.name}
+                      </h4>
+                      <p className="text-gray-400 font-jetbrains text-sm mb-3">
+                        {format.description}
+                      </p>
+                      <div className="text-cyan-400 font-jetbrains text-xs">
+                        Best for: {format.bestFor}
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -661,10 +829,10 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
               <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-6">
                 <h4 className="text-lg font-bold text-blue-300 font-orbitron mb-4 flex items-center gap-2">
                   <Target size={20} />
-                  Recommended Pairing System
+                  {formData.teamMode ? 'Selected' : 'Recommended'} Pairing System
                 </h4>
                 <div className="text-white font-jetbrains mb-2 text-lg">
-                  {recommendedSystem.charAt(0).toUpperCase() + recommendedSystem.slice(1).replace('-', ' ')}
+                  {selectedPairingFormat.charAt(0).toUpperCase() + selectedPairingFormat.slice(1).replace('-', ' ')}
                 </div>
                 <div className="text-gray-300 font-jetbrains text-sm">
                   {recommendationReasoning}
@@ -681,10 +849,10 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
               {/* Create Button */}
               <div className="flex justify-end gap-4">
                 <button
-                  onClick={() => setCurrentStep('wizard')}
+                  onClick={() => setCurrentStep(formData.teamMode ? 'basic' : 'pairing-method')}
                   className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                 >
-                  Back to Wizard
+                  Back
                 </button>
                 <button
                   onClick={handleCreateTournament}

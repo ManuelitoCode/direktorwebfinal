@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, FolderOpen, LogOut, Settings, Share2, QrCode } from 'lucide-react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import ParticleBackground from './components/ParticleBackground';
 import Button from './components/Button';
 import PlayerRegistration from './components/PlayerRegistration';
@@ -47,6 +47,7 @@ function ProtectedRoute({ children, user, loading }: ProtectedRouteProps) {
 }
 
 function HomePage() {
+  const navigate = useNavigate();
   const [currentScreen, setCurrentScreen] = useState<Screen>('dashboard');
   const [currentTournamentId, setCurrentTournamentId] = useState<string | null>(null);
   const [currentTournamentName, setCurrentTournamentName] = useState<string>('');
@@ -103,12 +104,33 @@ function HomePage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setCurrentScreen('home');
-    setCurrentTournamentId(null);
-    setCurrentTournamentName('');
-    setCurrentRound(1);
-    setHasExistingTournaments(false);
+    try {
+      await supabase.auth.signOut();
+      
+      // Show success toast
+      const toast = document.createElement('div');
+      toast.className = 'fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-green-500/50';
+      toast.innerHTML = `
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          You've been signed out. See you next time!
+        </div>
+      `;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 3000);
+      
+      // Redirect to landing page
+      navigate('/');
+    } catch (err) {
+      console.error('Error signing out:', err);
+      // Still redirect even if there's an error
+      navigate('/');
+    }
   };
 
   const handleNewTournament = () => {

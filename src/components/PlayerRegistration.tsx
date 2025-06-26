@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Eye, Save, ArrowLeft, ChevronRight, Trophy, CheckCircle, Share2, Copy, Check, UserCheck, Settings } from 'lucide-react';
+import { Users, Eye, Save, ArrowLeft, ChevronRight, Trophy, CheckCircle, Share2, Copy, Check, UserCheck, Settings, Calendar } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
 import PlayerPreviewTable from './PlayerPreviewTable';
 import TournamentHeader from './TournamentHeader';
 import TeamManager from './TeamManager';
+import TeamScheduleModal from './TeamScheduleModal';
 import { parsePlayerInput } from '../utils/playerParser';
+import { generateTeamRoundRobinPairings } from '../utils/teamPairingAlgorithms';
 import { supabase } from '../lib/supabase';
 import { ParsedPlayer, Player, Tournament, Division, Team } from '../types/database';
 
@@ -28,8 +30,10 @@ const PlayerRegistration: React.FC<PlayerRegistrationProps> = ({
   const [parsedPlayers, setParsedPlayers] = useState<ParsedPlayer[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [showTeamManager, setShowTeamManager] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingSchedule, setIsGeneratingSchedule] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [completedDivisions, setCompletedDivisions] = useState<Set<number>>(new Set());
   const [publicUrl, setPublicUrl] = useState<string>('');
@@ -93,7 +97,7 @@ James Rodriguez, 1856`;
       if (!divisionsData || divisionsData.length === 0) {
         if (tournamentData.divisions && tournamentData.divisions > 1) {
           // Create default divisions
-          const defaultDivisions = Array.from({ length: tournamentData.divisions }, (_, i) => ({
+          const defaultDivisions = Array.from({ length: tournamentData.divisions }, (_,i) => ({
             tournament_id: tournamentId,
             name: `Division ${i + 1}`,
             division_number: i + 1
@@ -234,7 +238,17 @@ James Rodriguez, 1856`;
       // Move to next division or finish
       if (isLastDivision) {
         // All divisions completed
-        onNext();
+        if (isTeamMode) {
+          // For team mode, show the schedule generation modal
+          const teamNames = Array.from(new Set(validPlayers.map(p => p.team_name).filter(Boolean)));
+          if (teamNames.length >= 2) {
+            setShowScheduleModal(true);
+          } else {
+            onNext();
+          }
+        } else {
+          onNext();
+        }
       } else {
         setCurrentDivisionIndex(currentDivisionIndex + 1);
       }
@@ -272,6 +286,107 @@ James Rodriguez, 1856`;
       console.error('Failed to copy link:', err);
       // Fallback: show alert with link
       alert(`Tournament link: ${publicUrl}`);
+    }
+  };
+
+  const handleGenerateTeamSchedule = async () => {
+    if (!isTeamMode) return;
+    
+    setIsGeneratingSchedule(true);
+    setError(null);
+    
+    try {
+      // Get all players
+      const { data: playersData, error: playersError } = await supabase
+        .from('players')
+        .select('*')
+        .eq('tournament_id', tournamentId);
+        
+      if (playersError) throw playersError;
+      
+      // Group players by team
+      const teamMap = new Map<string, Player[]>();
+      playersData?.forEach(player => {
+        if (!player.team_name) return;
+        
+        if (!teamMap.has(player.team_name)) {
+          teamMap.set(player.team_name, []);
+        }
+        teamMap.get(player.team_name)!.push(player);
+      });
+      
+      const teamNames = Array.from(teamMap.keys());
+      
+      if (teamNames.length < 2) {
+        throw new Error('Need at least 2 teams to generate schedule');
+      }
+      
+      // Calculate total rounds needed
+      const totalRounds = teamNames.length - 1;
+      
+      // Update tournament rounds if needed
+      if (tournament && tournament.rounds !== totalRounds) {
+        await supabase
+          .from('tournaments')
+          .update({ rounds: totalRounds })
+          .eq('id', tournamentId);
+      }
+      
+      // Generate round-robin schedule for teams
+      for (let round = 1; round <= totalRounds; round++) {
+        // Generate pairings for this round
+        const playersWithRank = playersData?.map(player => ({
+          ...player,
+          rank: 0,
+          previous_starts: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          points: 0,
+          spread: 0,
+          is_gibsonized: false
+        })) || [];
+        
+        const { pairings } = generateTeamRoundRobinPairings(
+          playersWithRank,
+          round,
+          []
+        );
+        
+        // Insert pairings into database
+        if (pairings.length > 0) {
+          const pairingsToInsert = pairings.map((pairing, index) => ({
+            round_number: round,
+            tournament_id: tournamentId,
+            table_number: pairing.table_number,
+            player1_id: pairing.player1.id!,
+            player2_id: pairing.player2.id!,
+            player1_rank: pairing.player1.rank,
+            player2_rank: pairing.player2.rank,
+            first_move_player_id: pairing.first_move_player_id,
+            player1_gibsonized: false,
+            player2_gibsonized: false
+          }));
+          
+          const { error: pairingError } = await supabase
+            .from('pairings')
+            .insert(pairingsToInsert);
+            
+          if (pairingError) throw pairingError;
+        }
+      }
+      
+      // Success - proceed to next step
+      onNext();
+      
+    } catch (err: any) {
+      console.error('Error generating team schedule:', err);
+      setError(`Failed to generate team schedule: ${err.message}`);
+      // Still allow proceeding to next step even if schedule generation fails
+      onNext();
+    } finally {
+      setIsGeneratingSchedule(false);
+      setShowScheduleModal(false);
     }
   };
 
@@ -607,6 +722,18 @@ James Rodriguez, 1856`;
           </div>
         </footer>
       </div>
+
+      {/* Team Schedule Modal */}
+      {isTeamMode && (
+        <TeamScheduleModal
+          isOpen={showScheduleModal}
+          onClose={() => setShowScheduleModal(false)}
+          onConfirm={handleGenerateTeamSchedule}
+          onSkip={onNext}
+          teams={Array.from(new Set(parsedPlayers.filter(p => p.isValid).map(p => p.team_name || '')))}
+          totalRounds={Math.max(1, Array.from(new Set(parsedPlayers.filter(p => p.isValid).map(p => p.team_name))).length - 1)}
+        />
+      )}
 
       {/* Background Effects */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30 pointer-events-none"></div>
