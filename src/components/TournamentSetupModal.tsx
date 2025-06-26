@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save } from 'lucide-react';
+import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { WizardResponses, TournamentConfig, PairingFormat } from '../types/database';
 import { recommendPairingSystem } from '../utils/pairingStrategyIntelligence';
@@ -17,6 +17,7 @@ interface FormData {
   rounds: number;
   divisions: number;
   divisionNames: string[];
+  teamMode: boolean; // Added for team mode
 }
 
 interface WizardStep {
@@ -31,6 +32,23 @@ interface WizardStep {
 }
 
 const WIZARD_STEPS: WizardStep[] = [
+  {
+    id: 'tournamentType',
+    question: 'What type of tournament are you running?',
+    description: 'Choose between individual or team-based competition',
+    options: [
+      {
+        value: 'individual',
+        label: 'Individual Tournament',
+        description: 'Players compete individually for rankings and prizes'
+      },
+      {
+        value: 'team',
+        label: 'Team Tournament',
+        description: 'Players are grouped into teams that compete against each other'
+      }
+    ]
+  },
   {
     id: 'topPlayersMeeting',
     question: 'When should the top players meet?',
@@ -133,7 +151,8 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     venue: '',
     rounds: 7,
     divisions: 1,
-    divisionNames: ['Main Division']
+    divisionNames: ['Main Division'],
+    teamMode: false
   });
 
   // Wizard responses
@@ -141,7 +160,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
   const [recommendedSystem, setRecommendedSystem] = useState<PairingFormat>('swiss');
   const [recommendationReasoning, setRecommendationReasoning] = useState<string>('');
 
-  const handleInputChange = (field: keyof FormData, value: string | number) => {
+  const handleInputChange = (field: keyof FormData, value: string | number | boolean) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
       
@@ -207,6 +226,14 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     };
     setWizardResponses(updatedResponses);
 
+    // Handle team mode selection
+    if (currentWizardStep.id === 'tournamentType') {
+      setFormData(prev => ({
+        ...prev,
+        teamMode: value === 'team'
+      }));
+    }
+
     if (wizardStepIndex < WIZARD_STEPS.length - 1) {
       setWizardStepIndex(wizardStepIndex + 1);
     } else {
@@ -232,6 +259,13 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     
     // Always include fairness as important
     priorityGoals.push('fairness');
+
+    // For team mode, recommend team-round-robin
+    if (formData.teamMode) {
+      setRecommendedSystem('team-round-robin');
+      setRecommendationReasoning('Team Round-Robin is recommended for team-based tournaments, ensuring each team plays every other team with all possible player matchups.');
+      return;
+    }
 
     const recommendation = recommendPairingSystem({
       primary: responses.suspenseUntilEnd === 'critical' ? 'Max suspense' : 'Max fairness',
@@ -265,12 +299,13 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         divisions: formData.divisions,
         director_id: user.id,
         status: 'registration' as const,
+        team_mode: formData.teamMode,
         pairing_system: recommendedSystem,
         wizard_responses: {
           ...wizardResponses,
           topPlayersMeeting: wizardResponses.topPlayersMeeting || 'late',
           avoidRematches: wizardResponses.avoidRematches === 'yes',
-          avoidSameTeam: false,
+          avoidSameTeam: formData.teamMode, // Always true for team mode
           suspenseUntilEnd: wizardResponses.suspenseUntilEnd === 'critical',
           manualPairing: false,
           competitiveLevel: wizardResponses.competitiveLevel || 'competitive',
@@ -340,7 +375,8 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       venue: '',
       rounds: 7,
       divisions: 1,
-      divisionNames: ['Main Division']
+      divisionNames: ['Main Division'],
+      teamMode: false
     });
     setWizardResponses({});
     setError(null);
@@ -370,7 +406,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
             <div>
               <h2 className="text-2xl font-bold text-white font-orbitron">
                 {currentStep === 'basic' ? 'Create Tournament' :
-                 currentStep === 'wizard' ? 'Pairing Strategy Wizard' :
+                 currentStep === 'wizard' ? 'Tournament Setup Wizard' :
                  'Review & Create'}
               </h2>
               <p className="text-blue-300 font-jetbrains">
@@ -506,7 +542,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                 >
                   <Brain size={16} />
-                  Continue to Pairing Wizard
+                  Continue to Setup Wizard
                 </button>
               </div>
             </div>
@@ -532,10 +568,17 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                     className="w-full p-6 bg-gray-800/50 border border-gray-600 rounded-lg hover:bg-gray-700/50 hover:border-blue-500/50 transition-all duration-200 text-left group"
                   >
                     <div className="flex items-start gap-4">
-                      <div className="w-6 h-6 border-2 border-gray-500 rounded-full group-hover:border-blue-400 transition-colors duration-200 flex-shrink-0 mt-1"></div>
+                      <div className="w-6 h-6 border-2 border-gray-500 rounded-full group-hover:border-blue-400 transition-colors duration-200 flex-shrink-0 mt-1">
+                        {currentWizardStep.id === 'tournamentType' && option.value === 'team' && (
+                          <UserCheck className="w-4 h-4 text-blue-400 m-0.5" />
+                        )}
+                      </div>
                       <div>
-                        <div className="text-white font-medium font-jetbrains mb-2">
+                        <div className="text-white font-medium font-jetbrains mb-2 flex items-center gap-2">
                           {option.label}
+                          {currentWizardStep.id === 'tournamentType' && option.value === 'team' && (
+                            <UserCheck className="w-4 h-4 text-blue-400" />
+                          )}
                         </div>
                         <div className="text-gray-400 font-jetbrains text-sm">
                           {option.description}
@@ -598,6 +641,19 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                     <span className="text-gray-400">Divisions:</span>
                     <span className="text-white ml-2 font-jetbrains">{formData.divisions}</span>
                   </div>
+                  <div>
+                    <span className="text-gray-400">Type:</span>
+                    <span className="text-white ml-2 font-jetbrains flex items-center gap-1">
+                      {formData.teamMode ? (
+                        <>
+                          <UserCheck className="w-4 h-4 text-blue-400" />
+                          Team Tournament
+                        </>
+                      ) : (
+                        'Individual Tournament'
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -608,7 +664,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                   Recommended Pairing System
                 </h4>
                 <div className="text-white font-jetbrains mb-2 text-lg">
-                  {recommendedSystem.charAt(0).toUpperCase() + recommendedSystem.slice(1).replace('-', '-')}
+                  {recommendedSystem.charAt(0).toUpperCase() + recommendedSystem.slice(1).replace('-', ' ')}
                 </div>
                 <div className="text-gray-300 font-jetbrains text-sm">
                   {recommendationReasoning}

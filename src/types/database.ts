@@ -3,6 +3,7 @@ export interface Player {
   name: string;
   rating: number;
   tournament_id: string;
+  team_name?: string; // Added for team mode
   created_at?: string;
 }
 
@@ -18,6 +19,7 @@ export interface Tournament {
   status?: 'setup' | 'registration' | 'active' | 'completed' | 'paused';
   last_activity?: string;
   created_at: string;
+  team_mode?: boolean; // Added for team mode
   // Tournament configuration
   pairing_system?: PairingFormat;
   wizard_responses?: WizardResponses;
@@ -45,6 +47,7 @@ export interface Sponsor {
 export interface ParsedPlayer {
   name: string;
   rating: number;
+  team_name?: string; // Added for team mode
   isValid: boolean;
   error?: string;
 }
@@ -101,7 +104,38 @@ export interface Result {
   created_at?: string;
 }
 
-export type PairingFormat = 'swiss' | 'fonte-swiss' | 'king-of-hill' | 'round-robin' | 'quartile' | 'manual';
+// Team Mode Types
+export interface TeamStanding {
+  team_name: string;
+  matches_won: number;
+  matches_lost: number;
+  matches_drawn: number;
+  total_games_won: number;
+  total_games_lost: number;
+  total_spread: number;
+  players: Player[];
+  rank: number;
+}
+
+export interface TeamMatchResult {
+  round_number: number;
+  team1_name: string;
+  team2_name: string;
+  team1_games_won: number;
+  team2_games_won: number;
+  team1_spread: number;
+  team2_spread: number;
+  winner_team?: string;
+  individual_results: Array<{
+    player1_name: string;
+    player2_name: string;
+    player1_score: number;
+    player2_score: number;
+    winner_name?: string;
+  }>;
+}
+
+export type PairingFormat = 'swiss' | 'fonte-swiss' | 'king-of-hill' | 'round-robin' | 'quartile' | 'manual' | 'team-round-robin';
 
 // Pairing Strategy Intelligence Types
 export interface PairingGoal {

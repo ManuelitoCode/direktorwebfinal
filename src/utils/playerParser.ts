@@ -1,6 +1,6 @@
 import { ParsedPlayer } from '../types/database';
 
-export function parsePlayerInput(input: string): ParsedPlayer[] {
+export function parsePlayerInput(input: string, teamMode: boolean = false): ParsedPlayer[] {
   const lines = input.split('\n').filter(line => line.trim() !== '');
   const players: ParsedPlayer[] = [];
   const seenNames = new Set<string>();
@@ -9,23 +9,61 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
     const trimmedLine = line.trim();
     if (!trimmedLine) continue;
 
-    // Try different parsing patterns
     let name = '';
     let ratingStr = '';
+    let teamName = '';
 
-    // Pattern 1: "Name, Rating" (comma separated)
-    if (trimmedLine.includes(',')) {
-      const parts = trimmedLine.split(',');
-      if (parts.length >= 2) {
-        name = parts[0].trim();
-        ratingStr = parts[parts.length - 1].trim();
+    if (teamMode) {
+      // Team mode parsing: "Name, Rating ; ; team TeamName"
+      const teamMatch = trimmedLine.match(/^(.+?)\s*;\s*;\s*team\s+(.+)$/i);
+      if (teamMatch) {
+        const playerPart = teamMatch[1].trim();
+        teamName = teamMatch[2].trim();
+        
+        // Parse player part for name and rating
+        if (playerPart.includes(',')) {
+          const parts = playerPart.split(',');
+          if (parts.length >= 2) {
+            name = parts[0].trim();
+            ratingStr = parts[parts.length - 1].trim();
+          }
+        } else {
+          const lastSpaceIndex = playerPart.lastIndexOf(' ');
+          if (lastSpaceIndex !== -1) {
+            name = playerPart.substring(0, lastSpaceIndex).trim();
+            ratingStr = playerPart.substring(lastSpaceIndex + 1).trim();
+          }
+        }
+      } else {
+        // Try regular parsing without team
+        if (trimmedLine.includes(',')) {
+          const parts = trimmedLine.split(',');
+          if (parts.length >= 2) {
+            name = parts[0].trim();
+            ratingStr = parts[parts.length - 1].trim();
+          }
+        } else {
+          const lastSpaceIndex = trimmedLine.lastIndexOf(' ');
+          if (lastSpaceIndex !== -1) {
+            name = trimmedLine.substring(0, lastSpaceIndex).trim();
+            ratingStr = trimmedLine.substring(lastSpaceIndex + 1).trim();
+          }
+        }
       }
     } else {
-      // Pattern 2: "Name Rating" (space separated, rating is last word)
-      const lastSpaceIndex = trimmedLine.lastIndexOf(' ');
-      if (lastSpaceIndex !== -1) {
-        name = trimmedLine.substring(0, lastSpaceIndex).trim();
-        ratingStr = trimmedLine.substring(lastSpaceIndex + 1).trim();
+      // Regular parsing for individual mode
+      if (trimmedLine.includes(',')) {
+        const parts = trimmedLine.split(',');
+        if (parts.length >= 2) {
+          name = parts[0].trim();
+          ratingStr = parts[parts.length - 1].trim();
+        }
+      } else {
+        const lastSpaceIndex = trimmedLine.lastIndexOf(' ');
+        if (lastSpaceIndex !== -1) {
+          name = trimmedLine.substring(0, lastSpaceIndex).trim();
+          ratingStr = trimmedLine.substring(lastSpaceIndex + 1).trim();
+        }
       }
     }
 
@@ -34,6 +72,7 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
       players.push({
         name: trimmedLine,
         rating: 0,
+        team_name: teamMode ? teamName || undefined : undefined,
         isValid: false,
         error: 'Missing rating'
       });
@@ -45,6 +84,7 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
       players.push({
         name: '',
         rating: 0,
+        team_name: teamMode ? teamName || undefined : undefined,
         isValid: false,
         error: 'Missing name'
       });
@@ -57,6 +97,7 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
       players.push({
         name,
         rating: 0,
+        team_name: teamMode ? teamName || undefined : undefined,
         isValid: false,
         error: 'Duplicate name'
       });
@@ -69,8 +110,21 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
       players.push({
         name,
         rating: 0,
+        team_name: teamMode ? teamName || undefined : undefined,
         isValid: false,
         error: 'Invalid rating (0-3000)'
+      });
+      continue;
+    }
+
+    // Validate team name in team mode
+    if (teamMode && !teamName) {
+      players.push({
+        name,
+        rating,
+        team_name: undefined,
+        isValid: false,
+        error: 'Missing team name'
       });
       continue;
     }
@@ -79,6 +133,7 @@ export function parsePlayerInput(input: string): ParsedPlayer[] {
     players.push({
       name,
       rating,
+      team_name: teamMode ? teamName : undefined,
       isValid: true
     });
   }
