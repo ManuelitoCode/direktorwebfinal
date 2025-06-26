@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Eye, Trash2, Calendar, MapPin, Users, Trophy, Clock, ArrowRight } from 'lucide-react';
+import { Play, Eye, Trash2, Calendar, MapPin, Users, Trophy, Clock, ArrowRight, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
@@ -50,8 +50,7 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
         .select(`
           *,
           players(count),
-          pairings(count),
-          results(count)
+          pairings(count)
         `)
         .eq('director_id', user.id)
         .order('last_activity', { ascending: false });
@@ -71,12 +70,18 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
             ? Math.max(0, ...roundsData.map(r => r.round_number), 0)
             : 0;
 
+          // Get results count
+          const { data: resultsData } = await supabase
+            .from('results')
+            .select('id')
+            .eq('tournament_id', tournament.id);
+
           return {
             ...tournament,
             player_count: tournament.players?.[0]?.count || 0,
             completed_rounds: completedRounds,
             total_pairings: tournament.pairings?.[0]?.count || 0,
-            completed_results: tournament.results?.[0]?.count || 0
+            completed_results: resultsData?.length || 0
           };
         })
       );
@@ -96,6 +101,10 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
 
   const handleViewTournament = (tournamentId: string) => {
     navigate(`/t/${tournamentId}`);
+  };
+
+  const handleOpenControlCenter = (tournamentId: string) => {
+    navigate(`/tournament/${tournamentId}/dashboard`);
   };
 
   const handleDeleteTournament = async (tournamentId: string) => {
@@ -309,8 +318,16 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
                     {/* Action Buttons */}
                     <div className="flex items-center gap-3">
                       <button
+                        onClick={() => handleOpenControlCenter(tournament.id)}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                      >
+                        <Target size={16} />
+                        Control Center
+                      </button>
+                      
+                      <button
                         onClick={() => handleResumeTournament(tournament)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                        className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                       >
                         <Play size={16} />
                         Resume

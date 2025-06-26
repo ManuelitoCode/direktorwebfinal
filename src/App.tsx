@@ -16,6 +16,7 @@ import PublicTournamentView from './components/PublicTournamentView';
 import ProjectionMode from './components/ProjectionMode';
 import QRCodeModal from './components/QRCodeModal';
 import LandingPage from './components/LandingPage';
+import TournamentControlCenter from './components/TournamentControlCenter';
 import { supabase } from './lib/supabase';
 import { useTournamentProgress } from './hooks/useTournamentProgress';
 import type { User } from '@supabase/supabase-js';
@@ -539,6 +540,31 @@ function DashboardRoute() {
   );
 }
 
+// Tournament Control Center Route Component
+function TournamentControlCenterRoute() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return (
+    <ProtectedRoute user={user} loading={loading}>
+      <TournamentControlCenter />
+    </ProtectedRoute>
+  );
+}
+
 function App() {
   return (
     <Router>
@@ -551,6 +577,7 @@ function App() {
         <Route path="/new-tournament" element={<DashboardRoute />} />
         <Route path="/tournaments" element={<DashboardRoute />} />
         <Route path="/history" element={<DashboardRoute />} />
+        <Route path="/tournament/:tournamentId/dashboard" element={<TournamentControlCenterRoute />} />
         <Route path="/t/:tournamentId" element={<PublicTournamentRoute />} />
         <Route path="/projector/:tournamentId/:divisionId" element={<ProjectionModeRoute />} />
       </Routes>
