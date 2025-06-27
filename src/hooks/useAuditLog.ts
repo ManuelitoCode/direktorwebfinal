@@ -11,7 +11,7 @@ export function useAuditLog() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        console.warn('Cannot log action: user not authenticated');
+        console.warn('Cannot log audit entry: user not authenticated');
         return;
       }
 

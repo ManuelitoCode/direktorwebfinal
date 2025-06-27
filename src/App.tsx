@@ -17,6 +17,7 @@ import LandingPage from './components/LandingPage';
 import TournamentControlCenter from './components/TournamentControlCenter';
 import { supabase } from './lib/supabase';
 import { useTournamentProgress } from './hooks/useTournamentProgress';
+import { useAuditLog } from './hooks/useAuditLog';
 import type { User } from '@supabase/supabase-js';
 
 // Lazy-loaded components
@@ -62,6 +63,7 @@ function HomePage() {
   const [hasExistingTournaments, setHasExistingTournaments] = useState(false);
 
   const { setTournamentStatus, setTournamentRound } = useTournamentProgress();
+  const { logAction } = useAuditLog();
 
   useEffect(() => {
     // Get initial session
@@ -108,6 +110,14 @@ function HomePage() {
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
+      
+      // Log signout action
+      logAction({
+        action: 'user_logout',
+        details: {
+          user_id: user?.id
+        }
+      });
       
       // Show success toast
       const toast = document.createElement('div');
@@ -169,6 +179,15 @@ function HomePage() {
       
       // Update tournament status to registration
       await setTournamentStatus(tournamentId, 'registration');
+      
+      // Log tournament creation
+      logAction({
+        action: 'tournament_flow_started',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentData?.name
+        }
+      });
     } catch (err) {
       console.error('Error loading tournament after creation:', err);
       // Show error toast
@@ -195,6 +214,17 @@ function HomePage() {
       setCurrentTournamentId(tournamentId);
       setCurrentTournamentName(tournamentData?.name || 'Tournament');
       setCurrentRound(round);
+      
+      // Log tournament resume
+      logAction({
+        action: 'tournament_resumed',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentData?.name,
+          current_round: round,
+          status: tournamentData?.status
+        }
+      });
       
       // Determine which screen to show based on tournament status
       const status = tournamentData?.status;
@@ -223,6 +253,14 @@ function HomePage() {
   const handleAdminPanel = () => {
     if (currentTournamentId) {
       setCurrentScreen('admin-panel');
+      
+      // Log admin panel access
+      logAction({
+        action: 'admin_panel_accessed',
+        details: {
+          tournament_id: currentTournamentId
+        }
+      });
     } else {
       alert('Please create or select a tournament first');
     }
@@ -245,6 +283,15 @@ function HomePage() {
     
     if (currentTournamentId) {
       await setTournamentStatus(currentTournamentId, 'active');
+      
+      // Log round manager navigation
+      logAction({
+        action: 'round_manager_accessed',
+        details: {
+          tournament_id: currentTournamentId,
+          tournament_name: currentTournamentName
+        }
+      });
     }
   };
 
@@ -254,12 +301,34 @@ function HomePage() {
     
     if (currentTournamentId) {
       await setTournamentRound(currentTournamentId, currentRound);
+      
+      // Log score entry navigation
+      logAction({
+        action: 'score_entry_accessed',
+        details: {
+          tournament_id: currentTournamentId,
+          tournament_name: currentTournamentName,
+          round: currentRound
+        }
+      });
     }
   };
 
   const handleNextToStandings = () => {
     console.log('Navigate to Standings');
     setCurrentScreen('standings');
+    
+    // Log standings navigation
+    if (currentTournamentId) {
+      logAction({
+        action: 'standings_accessed',
+        details: {
+          tournament_id: currentTournamentId,
+          tournament_name: currentTournamentName,
+          round: currentRound
+        }
+      });
+    }
   };
 
   const handleNextRound = async () => {
@@ -270,6 +339,16 @@ function HomePage() {
       
       if (currentTournamentId) {
         await setTournamentRound(currentTournamentId, newRound);
+        
+        // Log next round navigation
+        logAction({
+          action: 'next_round_started',
+          details: {
+            tournament_id: currentTournamentId,
+            tournament_name: currentTournamentName,
+            new_round: newRound
+          }
+        });
       }
     }
   };
@@ -294,6 +373,15 @@ function HomePage() {
       setTimeout(() => {
         document.body.removeChild(toast);
       }, 3000);
+      
+      // Log link copy
+      logAction({
+        action: 'tournament_link_copied',
+        details: {
+          tournament_id: currentTournamentId,
+          tournament_name: currentTournamentName
+        }
+      });
     } catch (err) {
       console.error('Failed to copy link:', err);
       alert(`Tournament link: ${link}`);
@@ -302,6 +390,17 @@ function HomePage() {
 
   const handleShowQRCode = () => {
     setShowQRModal(true);
+    
+    // Log QR code view
+    if (currentTournamentId) {
+      logAction({
+        action: 'qr_code_generated',
+        details: {
+          tournament_id: currentTournamentId,
+          tournament_name: currentTournamentName
+        }
+      });
+    }
   };
 
   // Show loading spinner while checking auth

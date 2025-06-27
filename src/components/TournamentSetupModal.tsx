@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck, ArrowRight } from 'lucide-react';
+import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck, ArrowRight, Lock, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { WizardResponses, TournamentConfig, PairingFormat } from '../types/database';
 import { recommendPairingSystem } from '../utils/pairingStrategyIntelligence';
+import { useAuditLog } from '../hooks/useAuditLog';
 
 interface TournamentSetupModalProps {
   isOpen: boolean;
@@ -18,6 +19,10 @@ interface FormData {
   divisions: number;
   divisionNames: string[];
   teamMode: boolean;
+  isPasswordProtected: boolean;
+  password: string;
+  publicSharingEnabled: boolean;
+  showPassword: boolean;
 }
 
 interface WizardStep {
@@ -173,7 +178,11 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     rounds: 7,
     divisions: 1,
     divisionNames: ['Main Division'],
-    teamMode: false
+    teamMode: false,
+    isPasswordProtected: false,
+    password: '',
+    publicSharingEnabled: true,
+    showPassword: false
   });
 
   // Wizard responses
@@ -181,6 +190,8 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
   const [selectedPairingFormat, setSelectedPairingFormat] = useState<PairingFormat>('swiss');
   const [recommendedSystem, setRecommendedSystem] = useState<PairingFormat>('swiss');
   const [recommendationReasoning, setRecommendationReasoning] = useState<string>('');
+
+  const { logAction } = useAuditLog();
 
   const handleInputChange = (field: keyof FormData, value: string | number | boolean) => {
     setFormData(prev => {
@@ -229,6 +240,10 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         return false;
       }
     }
+    if (formData.isPasswordProtected && !formData.password.trim()) {
+      setError('Password is required when password protection is enabled');
+      return false;
+    }
     return true;
   };
 
@@ -251,8 +266,24 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     if (method === 'wizard') {
       setCurrentStep('wizard');
       setWizardStepIndex(0);
+      
+      // Log wizard selection
+      logAction({
+        action: 'pairing_wizard_started',
+        details: {
+          tournament_name: formData.name
+        }
+      });
     } else {
       setCurrentStep('manual-selection');
+      
+      // Log manual selection
+      logAction({
+        action: 'manual_pairing_selected',
+        details: {
+          tournament_name: formData.name
+        }
+      });
     }
   };
 
@@ -263,6 +294,17 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       [currentWizardStep.id]: value
     };
     setWizardResponses(updatedResponses);
+    
+    // Log wizard response
+    logAction({
+      action: 'pairing_wizard_response',
+      details: {
+        question: currentWizardStep.id,
+        response: value,
+        step: wizardStepIndex + 1,
+        total_steps: WIZARD_STEPS.length
+      }
+    });
 
     if (wizardStepIndex < WIZARD_STEPS.length - 1) {
       setWizardStepIndex(wizardStepIndex + 1);
@@ -270,6 +312,14 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       // Wizard complete, generate recommendation
       generateRecommendation(updatedResponses);
       setCurrentStep('review');
+      
+      // Log wizard completion
+      logAction({
+        action: 'pairing_wizard_completed',
+        details: {
+          responses: updatedResponses
+        }
+      });
     }
   };
 
@@ -278,6 +328,15 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     setRecommendedSystem(format);
     setRecommendationReasoning(`You manually selected ${format.charAt(0).toUpperCase() + format.slice(1).replace('-', ' ')} as your preferred pairing system.`);
     setCurrentStep('review');
+    
+    // Log manual format selection
+    logAction({
+      action: 'pairing_format_selected',
+      details: {
+        format,
+        selection_method: 'manual'
+      }
+    });
   };
 
   const generateRecommendation = (responses: Partial<WizardResponses>) => {
@@ -308,6 +367,16 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
     setRecommendedSystem(recommendation.primary);
     setSelectedPairingFormat(recommendation.primary);
     setRecommendationReasoning(recommendation.reasoning);
+    
+    // Log recommendation
+    logAction({
+      action: 'pairing_recommendation_generated',
+      details: {
+        recommended_format: recommendation.primary,
+        reasoning: recommendation.reasoning,
+        wizard_responses: responses
+      }
+    });
   };
 
   const handleCreateTournament = async () => {
@@ -332,6 +401,8 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         status: 'registration' as const,
         team_mode: formData.teamMode,
         pairing_system: selectedPairingFormat,
+        password: formData.isPasswordProtected ? formData.password : null,
+        public_sharing_enabled: formData.publicSharingEnabled,
         wizard_responses: {
           ...wizardResponses,
           topPlayersMeeting: wizardResponses.topPlayersMeeting || 'late',
@@ -386,6 +457,20 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         if (divisionError) throw divisionError;
       }
 
+      // Log tournament creation
+      logAction({
+        action: 'tournament_created',
+        details: {
+          tournament_id: tournament.id,
+          tournament_name: tournament.name,
+          team_mode: formData.teamMode,
+          pairing_system: selectedPairingFormat,
+          divisions: formData.divisions,
+          rounds: formData.rounds,
+          password_protected: formData.isPasswordProtected
+        }
+      });
+
       // Success! Call the success callback with tournament ID
       onSuccess(tournament.id);
 
@@ -407,7 +492,11 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
       rounds: 7,
       divisions: 1,
       divisionNames: ['Main Division'],
-      teamMode: false
+      teamMode: false,
+      isPasswordProtected: false,
+      password: '',
+      publicSharingEnabled: true,
+      showPassword: false
     });
     setWizardResponses({});
     setSelectedPairingFormat('swiss');
@@ -574,6 +663,91 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                     <p className="text-xs text-blue-300">Teams will compete against each other with automatic round-robin scheduling</p>
                   </div>
                 )}
+              </div>
+
+              {/* Password Protection */}
+              <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <Lock className="w-6 h-6 text-purple-400" />
+                    <div>
+                      <h3 className="text-lg font-bold text-white font-orbitron">Password Protection</h3>
+                      <p className="text-purple-300 font-jetbrains text-sm">Require a password to view tournament</p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleInputChange('isPasswordProtected', !formData.isPasswordProtected)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                      formData.isPasswordProtected ? 'bg-purple-600' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+                        formData.isPasswordProtected ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                {formData.isPasswordProtected && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2 font-jetbrains">
+                      Tournament Password *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={formData.showPassword ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => handleInputChange('password', e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 font-jetbrains pr-10"
+                        placeholder="Enter password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleInputChange('showPassword', !formData.showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200"
+                      >
+                        {formData.showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-purple-300 mt-2 font-jetbrains">
+                      This password will be required to view the tournament
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Public Sharing */}
+              <div className="bg-green-900/20 border border-green-500/30 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <Share2 className="w-6 h-6 text-green-400" />
+                    <div>
+                      <h3 className="text-lg font-bold text-white font-orbitron">Public Sharing</h3>
+                      <p className="text-green-300 font-jetbrains text-sm">Allow public access to tournament</p>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleInputChange('publicSharingEnabled', !formData.publicSharingEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                      formData.publicSharingEnabled ? 'bg-green-600' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+                        formData.publicSharingEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                <p className="text-green-200 font-jetbrains text-sm">
+                  {formData.publicSharingEnabled 
+                    ? '✅ Tournament will be publicly viewable via shared link' 
+                    : '❌ Tournament will be private and cannot be shared'}
+                </p>
               </div>
 
               {/* Division Names */}
@@ -819,6 +993,32 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                         </>
                       ) : (
                         'Individual Tournament'
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Password Protected:</span>
+                    <span className="text-white ml-2 font-jetbrains flex items-center gap-1">
+                      {formData.isPasswordProtected ? (
+                        <>
+                          <Lock className="w-4 h-4 text-purple-400" />
+                          Yes
+                        </>
+                      ) : (
+                        'No'
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Public Sharing:</span>
+                    <span className="text-white ml-2 font-jetbrains flex items-center gap-1">
+                      {formData.publicSharingEnabled ? (
+                        <>
+                          <Share2 className="w-4 h-4 text-green-400" />
+                          Enabled
+                        </>
+                      ) : (
+                        'Disabled'
                       )}
                     </span>
                   </div>

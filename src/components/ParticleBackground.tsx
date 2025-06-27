@@ -20,8 +20,20 @@ const ParticleBackground: React.FC = () => {
       particle.style.top = Math.random() * 100 + '%';
       particle.style.animationDelay = Math.random() * 6 + 's';
       particle.style.animationDuration = (Math.random() * 4 + 6) + 's';
+      
+      // Add GPU acceleration
+      particle.style.transform = 'translate3d(0, 0, 0)';
+      particle.style.willChange = 'transform';
+      
       container.appendChild(particle);
     }
+    
+    // Cleanup function
+    return () => {
+      if (container) {
+        container.innerHTML = '';
+      }
+    };
   }, []);
 
   return <div ref={particlesRef} className="particles" />;

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Copy, Check, Share2, Lock, Facebook, Twitter, Mail } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import PlayerDetailsModal from './PlayerDetailsModal';
 import TournamentHeader from './TournamentHeader';
 import { supabase } from '../lib/supabase';
 import { Tournament, Division, Player, PairingWithPlayers, Result } from '../types/database';
+import { useAuditLog } from '../hooks/useAuditLog';
 
 interface PlayerStanding {
   id: string;
@@ -42,6 +43,14 @@ const PublicTournamentView: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const publicUrlRef = useRef<string>('');
+  
+  const { logAction } = useAuditLog();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -55,17 +64,17 @@ const PublicTournamentView: React.FC = () => {
 
   useEffect(() => {
     if (tournamentId) {
-      loadTournamentData();
+      checkTournamentAccess();
     }
   }, [tournamentId]);
 
   useEffect(() => {
-    if (divisions.length > 0) {
+    if (divisions.length > 0 && isPasswordVerified) {
       loadDivisionData();
     }
-  }, [selectedDivision, divisions]);
+  }, [selectedDivision, divisions, isPasswordVerified]);
 
-  const loadTournamentData = async () => {
+  const checkTournamentAccess = async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -88,6 +97,31 @@ const PublicTournamentView: React.FC = () => {
 
       setTournament(tournamentData);
       setMaxRounds(tournamentData.rounds || 7);
+      
+      // Set public URL for sharing
+      publicUrlRef.current = `${window.location.origin}/t/${tournamentId}`;
+
+      // Check if password protected
+      if (tournamentData.password) {
+        setIsPasswordProtected(true);
+        // If not password verified yet, stop loading other data
+        if (!isPasswordVerified) {
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        // Not password protected, mark as verified
+        setIsPasswordVerified(true);
+      }
+
+      // Log view action
+      logAction({
+        action: 'tournament_viewed',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentData.name
+        }
+      });
 
       // Load divisions
       const { data: divisionsData, error: divisionsError } = await supabase
@@ -117,6 +151,37 @@ const PublicTournamentView: React.FC = () => {
       setError('Failed to load tournament data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const verifyPassword = () => {
+    if (!tournament) return;
+    
+    setPasswordError(null);
+    
+    if (passwordInput === tournament.password) {
+      setIsPasswordVerified(true);
+      
+      // Log successful password verification
+      logAction({
+        action: 'tournament_password_verified',
+        details: {
+          tournament_id: tournamentId
+        }
+      });
+      
+      // Load division data now that we're verified
+      loadDivisionData();
+    } else {
+      setPasswordError('Incorrect password');
+      
+      // Log failed password attempt
+      logAction({
+        action: 'tournament_password_failed',
+        details: {
+          tournament_id: tournamentId
+        }
+      });
     }
   };
 
@@ -260,16 +325,115 @@ const PublicTournamentView: React.FC = () => {
   const handlePlayerClick = (playerId: string) => {
     setSelectedPlayerId(playerId);
     setShowPlayerModal(true);
+    
+    // Log player details view
+    logAction({
+      action: 'player_details_viewed',
+      details: {
+        tournament_id: tournamentId,
+        player_id: playerId
+      }
+    });
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadTournamentData();
+    await loadDivisionData();
     setIsRefreshing(false);
+    
+    // Log refresh action
+    logAction({
+      action: 'tournament_view_refreshed',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
   };
 
   const handleBackToHome = () => {
     navigate('/');
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(publicUrlRef.current);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+      
+      // Log link copy action
+      logAction({
+        action: 'tournament_link_copied',
+        details: {
+          tournament_id: tournamentId
+        }
+      });
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+      // Fallback: show alert with link
+      alert(`Tournament link: ${publicUrlRef.current}`);
+    }
+  };
+
+  const handleShareViaEmail = () => {
+    if (!tournament) return;
+    
+    const subject = encodeURIComponent(`${tournament.name} - Scrabble Tournament`);
+    const body = encodeURIComponent(`Check out the live standings and results for ${tournament.name}:\n\n${publicUrlRef.current}`);
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+    
+    // Log email share action
+    logAction({
+      action: 'tournament_shared_email',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
+  };
+
+  const handleShareViaFacebook = () => {
+    if (!tournament) return;
+    
+    const url = encodeURIComponent(publicUrlRef.current);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank');
+    
+    // Log Facebook share action
+    logAction({
+      action: 'tournament_shared_facebook',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
+  };
+
+  const handleShareViaTwitter = () => {
+    if (!tournament) return;
+    
+    const text = encodeURIComponent(`Check out the live standings and results for ${tournament.name} Scrabble Tournament!`);
+    const url = encodeURIComponent(publicUrlRef.current);
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
+    
+    // Log Twitter share action
+    logAction({
+      action: 'tournament_shared_twitter',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
+  };
+
+  const handleShareViaWhatsApp = () => {
+    if (!tournament) return;
+    
+    const text = encodeURIComponent(`Check out the live standings and results for ${tournament.name} Scrabble Tournament: ${publicUrlRef.current}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+    
+    // Log WhatsApp share action
+    logAction({
+      action: 'tournament_shared_whatsapp',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
   };
 
   const exportStandings = () => {
@@ -295,6 +459,15 @@ const PublicTournamentView: React.FC = () => {
     a.download = `${tournament?.name || 'Tournament'}_Standings.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    
+    // Log export action
+    logAction({
+      action: 'tournament_standings_exported',
+      details: {
+        tournament_id: tournamentId,
+        format: 'csv'
+      }
+    });
   };
 
   const getRankStyle = (rank: number) => {
@@ -353,6 +526,67 @@ const PublicTournamentView: React.FC = () => {
     return null;
   }
 
+  // Password protection screen
+  if (isPasswordProtected && !isPasswordVerified) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
+        <ParticleBackground />
+        
+        <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 py-8">
+          <div className="max-w-md w-full bg-gray-900/80 backdrop-blur-lg border-2 border-blue-500/50 rounded-2xl p-8 shadow-2xl">
+            <div className="text-center mb-8">
+              <Lock className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+              <h1 className="text-3xl font-bold text-white font-orbitron mb-2">
+                Password Protected
+              </h1>
+              <p className="text-gray-300 font-jetbrains">
+                This tournament requires a password to view
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-300 text-sm font-medium mb-2 font-jetbrains">
+                  Enter Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && verifyPassword()}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white font-jetbrains focus:border-blue-500 focus:outline-none transition-colors duration-300"
+                  placeholder="Tournament password"
+                />
+              </div>
+              
+              {passwordError && (
+                <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 text-red-300 font-jetbrains text-sm">
+                  {passwordError}
+                </div>
+              )}
+              
+              <button
+                onClick={verifyPassword}
+                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+              >
+                Access Tournament
+              </button>
+              
+              <div className="text-center">
+                <button
+                  onClick={handleBackToHome}
+                  className="text-gray-400 hover:text-white text-sm font-jetbrains transition-colors duration-200"
+                >
+                  Back to Home
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const currentDivision = divisions[selectedDivision];
 
   return (
@@ -379,16 +613,82 @@ const PublicTournamentView: React.FC = () => {
               <span className="font-jetbrains">Home</span>
             </button>
             
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className={`flex items-center gap-2 px-4 py-2 bg-blue-800/80 backdrop-blur-lg text-blue-300 hover:text-white rounded-lg border border-blue-700/50 hover:border-blue-600/50 transition-all duration-200 ${
-                isRefreshing ? 'animate-pulse' : ''
-              }`}
-            >
-              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className={`flex items-center gap-2 px-4 py-2 bg-blue-800/80 backdrop-blur-lg text-blue-300 hover:text-white rounded-lg border border-blue-700/50 hover:border-blue-600/50 transition-all duration-200 ${
+                  isRefreshing ? 'animate-pulse' : ''
+                }`}
+              >
+                <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Sharing Section */}
+        <div className="max-w-6xl mx-auto w-full mb-8">
+          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
+            <h2 className="text-xl font-bold text-white font-orbitron mb-4 flex items-center gap-2">
+              <Share2 size={20} />
+              Share Tournament
+            </h2>
+            
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+              <div className="flex-1">
+                <div className="bg-gray-800/50 border border-gray-600 rounded-lg px-4 py-3 text-white font-jetbrains text-sm break-all">
+                  {publicUrlRef.current}
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleCopyLink}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg font-jetbrains text-sm transition-all duration-200 ${
+                    linkCopied
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-800/50 border border-gray-600 text-gray-300 hover:bg-gray-700/50 hover:text-white'
+                  }`}
+                >
+                  {linkCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
+                </button>
+                
+                <button
+                  onClick={handleShareViaFacebook}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 border border-blue-500/50 text-blue-400 hover:bg-blue-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
+                >
+                  <Facebook size={14} />
+                  Facebook
+                </button>
+                
+                <button
+                  onClick={handleShareViaTwitter}
+                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600/20 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
+                >
+                  <Twitter size={14} />
+                  Twitter
+                </button>
+                
+                <button
+                  onClick={handleShareViaWhatsApp}
+                  className="flex items-center gap-2 px-3 py-2 bg-green-600/20 border border-green-500/50 text-green-400 hover:bg-green-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
+                >
+                  <span className="text-lg">🟢</span>
+                  WhatsApp
+                </button>
+                
+                <button
+                  onClick={handleShareViaEmail}
+                  className="flex items-center gap-2 px-3 py-2 bg-purple-600/20 border border-purple-500/50 text-purple-400 hover:bg-purple-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
+                >
+                  <Mail size={14} />
+                  Email
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -735,6 +1035,34 @@ const PublicTournamentView: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Tournament Info */}
+        <div className="max-w-6xl mx-auto w-full mt-8 mb-4">
+          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
+            <h2 className="text-lg font-bold text-white font-orbitron mb-4">Tournament Information</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {tournament.date && (
+                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                  <Calendar size={16} className="text-blue-400" />
+                  <span>{new Date(tournament.date).toLocaleDateString()}</span>
+                </div>
+              )}
+              
+              {tournament.venue && (
+                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                  <MapPin size={16} className="text-green-400" />
+                  <span>{tournament.venue}</span>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                <Trophy size={16} className="text-yellow-400" />
+                <span>{tournament.rounds || 7} Rounds</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}

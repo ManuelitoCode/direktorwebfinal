@@ -3,6 +3,7 @@ import { Mail, Lock, User, LogIn, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ParticleBackground from './ParticleBackground';
+import { useAuditLog } from '../hooks/useAuditLog';
 
 interface AuthFormProps {
   onAuthSuccess: () => void;
@@ -17,6 +18,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSliding, setIsSliding] = useState(false);
+  
+  const { logAction } = useAuditLog();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +33,14 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           password,
         });
         if (error) throw error;
+        
+        // Log signup action
+        logAction({
+          action: 'user_signup',
+          details: {
+            email
+          }
+        });
         
         // Show success message for sign up
         const toast = document.createElement('div');
@@ -56,12 +67,29 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         });
         if (error) throw error;
         
+        // Log login action
+        logAction({
+          action: 'user_login',
+          details: {
+            email
+          }
+        });
+        
         // Success! Navigate to dashboard
         onAuthSuccess();
         navigate('/dashboard');
       }
     } catch (error: any) {
       setError(error.message);
+      
+      // Log auth error
+      logAction({
+        action: isSignUp ? 'user_signup_error' : 'user_login_error',
+        details: {
+          email,
+          error: error.message
+        }
+      });
     } finally {
       setLoading(false);
     }
