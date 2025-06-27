@@ -803,7 +803,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/auth" element={<AuthRoute />} />
+        <Route path="/auth" element={<Navigate to="/auth/signin" replace />} />
         <Route path="/auth/:mode" element={<AuthRoute />} />
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/admin" element={<DashboardRoute />} />
