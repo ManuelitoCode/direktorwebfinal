@@ -40,45 +40,61 @@ const DirectorsLeaderboard: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      // Query to get all directors by tournament count
-      const { data, error } = await supabase
+      // First, fetch all tournaments with director_id
+      const { data: tournamentsData, error: tournamentsError } = await supabase
         .from('tournaments')
-        .select(`
-          director_id,
-          count
-        `)
-        .not('director_id', 'is', null)
-        .group('director_id')
-        .order('count', { ascending: false });
+        .select('director_id')
+        .not('director_id', 'is', null);
 
-      if (error) throw error;
+      if (tournamentsError) throw tournamentsError;
+
+      if (!tournamentsData || tournamentsData.length === 0) {
+        setDirectors([]);
+        setFilteredDirectors([]);
+        return;
+      }
+
+      // Count tournaments per director using JavaScript
+      const directorCounts = tournamentsData.reduce((acc, tournament) => {
+        const directorId = tournament.director_id;
+        acc[directorId] = (acc[directorId] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Get unique director IDs and sort by tournament count
+      const sortedDirectorEntries = Object.entries(directorCounts)
+        .sort(([, countA], [, countB]) => countB - countA);
+
+      if (sortedDirectorEntries.length === 0) {
+        setDirectors([]);
+        setFilteredDirectors([]);
+        return;
+      }
 
       // Get user profiles for these directors
-      if (data && data.length > 0) {
-        const directorIds = data.map(item => item.director_id);
-        
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('user_profiles')
-          .select('id, username, avatar_url')
-          .in('id', directorIds);
+      const directorIds = sortedDirectorEntries.map(([directorId]) => directorId);
+      
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('id, username, avatar_url')
+        .in('id', directorIds);
 
-        if (profilesError) throw profilesError;
+      if (profilesError) throw profilesError;
 
-        // Combine data and assign ranks
-        const directorsWithProfiles = data.map((item, index) => {
-          const profile = profilesData?.find(p => p.id === item.director_id);
-          return {
-            id: item.director_id,
-            username: profile?.username || 'Tournament Director',
-            avatar_url: profile?.avatar_url,
-            tournament_count: item.count,
-            rank: index + 1
-          };
-        });
+      // Combine data and assign ranks
+      const directorsWithProfiles = sortedDirectorEntries.map(([directorId, count], index) => {
+        const profile = profilesData?.find(p => p.id === directorId);
+        return {
+          id: directorId,
+          username: profile?.username || 'Tournament Director',
+          avatar_url: profile?.avatar_url,
+          tournament_count: count,
+          rank: index + 1
+        };
+      });
 
-        setDirectors(directorsWithProfiles);
-        setFilteredDirectors(directorsWithProfiles);
-      }
+      setDirectors(directorsWithProfiles);
+      setFilteredDirectors(directorsWithProfiles);
     } catch (err) {
       console.error('Error fetching directors:', err);
       setError('Failed to load directors leaderboard');
