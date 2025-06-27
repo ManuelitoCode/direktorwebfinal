@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Download, Share2, QrCode, Copy, Check } from 'lucide-react';
 import QRCodeLib from 'qrcode';
+import { supabase } from '../lib/supabase';
+import { useAuditLog } from '../hooks/useAuditLog';
 
 interface QRCodeModalProps {
   isOpen: boolean;
@@ -18,19 +20,43 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [tournamentSlug, setTournamentSlug] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  const tournamentUrl = `${window.location.origin}/t/${tournamentId}`;
+  const { logAction } = useAuditLog();
 
   useEffect(() => {
     if (isOpen && tournamentId) {
-      generateQRCode();
+      loadTournamentSlug();
     }
   }, [isOpen, tournamentId]);
+  
+  const loadTournamentSlug = async () => {
+    try {
+      // Get tournament slug
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select('slug')
+        .eq('id', tournamentId)
+        .single();
+        
+      if (error) throw error;
+      
+      setTournamentSlug(data.slug);
+      generateQRCode(data.slug);
+    } catch (err) {
+      console.error('Error loading tournament slug:', err);
+      // Fallback to ID
+      generateQRCode(null);
+    }
+  };
 
-  const generateQRCode = async () => {
+  const generateQRCode = async (slug: string | null) => {
     try {
       setIsGenerating(true);
+      
+      // Use slug if available, otherwise use ID
+      const tournamentUrl = `https://direktorweb.com/tournaments/${slug || tournamentId}`;
       
       // Generate QR code with custom styling
       const qrCodeDataUrl = await QRCodeLib.toDataURL(tournamentUrl, {
@@ -44,6 +70,16 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
       });
       
       setQrCodeDataUrl(qrCodeDataUrl);
+      
+      // Log QR code generation
+      logAction({
+        action: 'qr_code_generated',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentName,
+          url_type: slug ? 'slug' : 'id'
+        }
+      });
     } catch (err) {
       console.error('Error generating QR code:', err);
     } finally {
@@ -58,6 +94,15 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     link.download = `${tournamentName.replace(/[^a-z0-9]/gi, '_')}_QR_Code.png`;
     link.href = qrCodeDataUrl;
     link.click();
+    
+    // Log download
+    logAction({
+      action: 'qr_code_downloaded',
+      details: {
+        tournament_id: tournamentId,
+        tournament_name: tournamentName
+      }
+    });
   };
 
   const shareQRCode = async () => {
@@ -77,6 +122,17 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
             text: `Scan this QR code to view the live tournament: ${tournamentName}`,
             files: [file]
           });
+          
+          // Log share
+          logAction({
+            action: 'qr_code_shared',
+            details: {
+              tournament_id: tournamentId,
+              tournament_name: tournamentName,
+              share_method: 'web_share_api'
+            }
+          });
+          
           return;
         }
       }
@@ -92,9 +148,20 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
 
   const copyToClipboard = async () => {
     try {
+      const tournamentUrl = `https://direktorweb.com/tournaments/${tournamentSlug || tournamentId}`;
       await navigator.clipboard.writeText(tournamentUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      
+      // Log copy
+      logAction({
+        action: 'tournament_link_copied',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentName,
+          url_type: tournamentSlug ? 'slug' : 'id'
+        }
+      });
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
@@ -122,6 +189,15 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
       setTimeout(() => {
         document.body.removeChild(toast);
       }, 3000);
+      
+      // Log QR image copy
+      logAction({
+        action: 'qr_code_image_copied',
+        details: {
+          tournament_id: tournamentId,
+          tournament_name: tournamentName
+        }
+      });
     } catch (err) {
       console.error('Failed to copy QR code image:', err);
       // Fallback to copying URL
@@ -130,6 +206,8 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const tournamentUrl = `https://direktorweb.com/tournaments/${tournamentSlug || tournamentId}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

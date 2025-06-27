@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { WizardResponses, TournamentConfig, PairingFormat } from '../types/database';
 import { recommendPairingSystem } from '../utils/pairingStrategyIntelligence';
 import { useAuditLog } from '../hooks/useAuditLog';
+import { generateTournamentSlug } from '../utils/slugify';
 
 interface TournamentSetupModalProps {
   isOpen: boolean;
@@ -390,6 +391,25 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         throw new Error('You must be logged in to create a tournament');
       }
 
+      // Generate slug from tournament name
+      const baseSlug = generateTournamentSlug(formData.name);
+      
+      // Check if slug already exists
+      const { data: existingTournament, error: slugCheckError } = await supabase
+        .from('tournaments')
+        .select('id')
+        .eq('slug', baseSlug)
+        .maybeSingle();
+        
+      if (slugCheckError) throw slugCheckError;
+      
+      // If slug exists, generate a unique one with ID
+      let slug = baseSlug;
+      if (existingTournament) {
+        // We'll append a unique ID after creation
+        slug = '';
+      }
+
       // Prepare tournament data
       const tournamentData = {
         name: formData.name.trim(),
@@ -400,7 +420,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         director_id: user.id,
         status: 'registration' as const,
         team_mode: formData.teamMode,
-        pairing_system: selectedPairingFormat,
+        slug, // Will be updated if needed after creation
         password: formData.isPasswordProtected ? formData.password : null,
         public_sharing_enabled: formData.publicSharingEnabled,
         wizard_responses: {
@@ -430,6 +450,18 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
         .single();
 
       if (tournamentError) throw tournamentError;
+      
+      // If we need to update the slug with a unique ID
+      if (!slug) {
+        const uniqueSlug = generateTournamentSlug(formData.name, tournament.id);
+        
+        const { error: slugUpdateError } = await supabase
+          .from('tournaments')
+          .update({ slug: uniqueSlug })
+          .eq('id', tournament.id);
+          
+        if (slugUpdateError) throw slugUpdateError;
+      }
 
       // Create divisions if multiple
       if (formData.divisions > 1) {
@@ -467,7 +499,8 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
           pairing_system: selectedPairingFormat,
           divisions: formData.divisions,
           rounds: formData.rounds,
-          password_protected: formData.isPasswordProtected
+          password_protected: formData.isPasswordProtected,
+          slug: slug || uniqueSlug
         }
       });
 
@@ -1036,6 +1069,20 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                 </div>
                 <div className="text-gray-300 font-jetbrains text-sm">
                   {recommendationReasoning}
+                </div>
+              </div>
+
+              {/* URL Preview */}
+              <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-6">
+                <h4 className="text-lg font-bold text-green-300 font-orbitron mb-4 flex items-center gap-2">
+                  <Share2 size={20} />
+                  Tournament URL Preview
+                </h4>
+                <div className="text-white font-jetbrains mb-2 text-lg">
+                  https://direktorweb.com/tournaments/{generateTournamentSlug(formData.name)}
+                </div>
+                <div className="text-gray-300 font-jetbrains text-sm">
+                  This is how your tournament URL will appear when shared. The URL is based on your tournament name.
                 </div>
               </div>
 

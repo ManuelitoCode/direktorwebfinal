@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Copy, Check, Share2, Lock, Facebook, Twitter, Mail, Search, X, Filter } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Search, X } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import PlayerDetailsModal from './PlayerDetailsModal';
 import TournamentHeader from './TournamentHeader';
@@ -26,7 +26,7 @@ interface RoundPairing extends PairingWithPlayers {
 }
 
 const PublicTournamentView: React.FC = () => {
-  const { tournamentId } = useParams<{ tournamentId: string }>();
+  const { tournamentId, slug } = useParams<{ tournamentId?: string; slug?: string }>();
   const navigate = useNavigate();
   
   const [tournament, setTournament] = useState<Tournament | null>(null);
@@ -43,17 +43,11 @@ const PublicTournamentView: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [showPlayerModal, setShowPlayerModal] = useState(false);
-  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
-  const [realtimeSubscription, setRealtimeSubscription] = useState<any>(null);
-  
-  const publicUrlRef = useRef<string>('');
-  const playerRefs = useRef<Record<string, HTMLElement>>({});
+  const [passwordProtected, setPasswordProtected] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   const { logAction } = useAuditLog();
 
@@ -68,46 +62,95 @@ const PublicTournamentView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (tournamentId) {
-      checkTournamentAccess();
+    if (tournamentId || slug) {
+      loadTournamentData();
     }
+  }, [tournamentId, slug]);
+
+  useEffect(() => {
+    if (divisions.length > 0) {
+      loadDivisionData();
+    }
+  }, [selectedDivision, divisions]);
+  
+  // Set up real-time subscription for live updates
+  useEffect(() => {
+    if (!tournament?.id) return;
+    
+    // Subscribe to results changes
+    const resultsSubscription = supabase
+      .channel('public:results')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'results', filter: `tournament_id=eq.${tournament.id}` },
+        () => {
+          console.log('Results updated, refreshing data...');
+          loadDivisionData();
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to pairings changes
+    const pairingsSubscription = supabase
+      .channel('public:pairings')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'pairings', filter: `tournament_id=eq.${tournament.id}` },
+        () => {
+          console.log('Pairings updated, refreshing data...');
+          loadDivisionData();
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to players changes
+    const playersSubscription = supabase
+      .channel('public:players')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'players', filter: `tournament_id=eq.${tournament.id}` },
+        () => {
+          console.log('Players updated, refreshing data...');
+          loadDivisionData();
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to tournament changes
+    const tournamentSubscription = supabase
+      .channel('public:tournaments')
+      .on('postgres_changes', 
+        { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournament.id}` },
+        () => {
+          console.log('Tournament updated, refreshing data...');
+          loadTournamentData();
+        }
+      )
+      .subscribe();
     
     return () => {
-      // Clean up realtime subscription
-      if (realtimeSubscription) {
-        realtimeSubscription.unsubscribe();
-      }
+      supabase.removeChannel(resultsSubscription);
+      supabase.removeChannel(pairingsSubscription);
+      supabase.removeChannel(playersSubscription);
+      supabase.removeChannel(tournamentSubscription);
     };
-  }, [tournamentId]);
+  }, [tournament?.id]);
 
-  useEffect(() => {
-    if (divisions.length > 0 && isPasswordVerified) {
-      loadDivisionData();
-      setupRealtimeSubscription();
-    }
-  }, [selectedDivision, divisions, isPasswordVerified]);
-  
-  useEffect(() => {
-    // Scroll to highlighted player if needed
-    if (highlightedPlayerId && playerRefs.current[highlightedPlayerId]) {
-      playerRefs.current[highlightedPlayerId].scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, [highlightedPlayerId, activeTab]);
-
-  const checkTournamentAccess = async () => {
+  const loadTournamentData = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Load tournament
-      const { data: tournamentData, error: tournamentError } = await supabase
-        .from('tournaments')
-        .select('*')
-        .eq('id', tournamentId)
-        .single();
+      // Load tournament by ID or slug
+      let tournamentQuery = supabase.from('tournaments').select('*');
+      
+      if (tournamentId) {
+        tournamentQuery = tournamentQuery.eq('id', tournamentId);
+      } else if (slug) {
+        tournamentQuery = tournamentQuery.eq('slug', slug);
+      } else {
+        setError('Tournament not found');
+        return;
+      }
+      
+      const { data: tournamentData, error: tournamentError } = await tournamentQuery.single();
 
       if (tournamentError) {
         if (tournamentError.code === 'PGRST116') {
@@ -118,39 +161,33 @@ const PublicTournamentView: React.FC = () => {
         return;
       }
 
+      // Check if tournament is password protected
+      if (tournamentData.password) {
+        setPasswordProtected(true);
+        if (!isAuthenticated) {
+          setTournament(tournamentData);
+          return;
+        }
+      }
+
       setTournament(tournamentData);
       setMaxRounds(tournamentData.rounds || 7);
       
-      // Set public URL for sharing
-      publicUrlRef.current = `${window.location.origin}/t/${tournamentId}`;
-
-      // Check if password protected
-      if (tournamentData.password) {
-        setIsPasswordProtected(true);
-        // If not password verified yet, stop loading other data
-        if (!isPasswordVerified) {
-          setIsLoading(false);
-          return;
-        }
-      } else {
-        // Not password protected, mark as verified
-        setIsPasswordVerified(true);
-      }
-
-      // Log view action
+      // Log view
       logAction({
         action: 'tournament_viewed',
         details: {
-          tournament_id: tournamentId,
-          tournament_name: tournamentData.name
+          tournament_id: tournamentData.id,
+          tournament_name: tournamentData.name,
+          view_type: 'public'
         }
       });
 
-      // Load divisions
+      // Load divisions if they exist
       const { data: divisionsData, error: divisionsError } = await supabase
         .from('divisions')
         .select('*')
-        .eq('tournament_id', tournamentId)
+        .eq('tournament_id', tournamentData.id)
         .order('division_number');
 
       if (divisionsError && divisionsError.code !== 'PGRST116') {
@@ -161,7 +198,7 @@ const PublicTournamentView: React.FC = () => {
       if (!divisionsData || divisionsData.length === 0) {
         setDivisions([{
           id: 'default',
-          tournament_id: tournamentId!,
+          tournament_id: tournamentData.id,
           name: 'Main Division',
           division_number: 1
         }]);
@@ -177,85 +214,10 @@ const PublicTournamentView: React.FC = () => {
     }
   };
 
-  const verifyPassword = () => {
-    if (!tournament) return;
-    
-    setPasswordError(null);
-    
-    if (passwordInput === tournament.password) {
-      setIsPasswordVerified(true);
-      
-      // Log successful password verification
-      logAction({
-        action: 'tournament_password_verified',
-        details: {
-          tournament_id: tournamentId
-        }
-      });
-      
-      // Load division data now that we're verified
-      loadDivisionData();
-    } else {
-      setPasswordError('Incorrect password');
-      
-      // Log failed password attempt
-      logAction({
-        action: 'tournament_password_failed',
-        details: {
-          tournament_id: tournamentId
-        }
-      });
-    }
-  };
-  
-  const setupRealtimeSubscription = () => {
-    // Clean up existing subscription if any
-    if (realtimeSubscription) {
-      realtimeSubscription.unsubscribe();
-    }
-    
-    // Set up realtime subscription for results
-    const subscription = supabase
-      .channel('public:results')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'results',
-          filter: `tournament_id=eq.${tournamentId}`
-        }, 
-        (payload) => {
-          console.log('Realtime update:', payload);
-          // Refresh data when results change
-          loadDivisionData();
-        }
-      )
-      .subscribe();
-      
-    // Set up realtime subscription for pairings
-    const pairingsSubscription = supabase
-      .channel('public:pairings')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'pairings',
-          filter: `tournament_id=eq.${tournamentId}`
-        }, 
-        (payload) => {
-          console.log('Realtime pairing update:', payload);
-          // Refresh data when pairings change
-          loadDivisionData();
-        }
-      )
-      .subscribe();
-      
-    // Store subscription for cleanup
-    setRealtimeSubscription(subscription);
-  };
-
   const loadDivisionData = async () => {
     try {
+      if (!tournament || !isAuthenticated && passwordProtected) return;
+      
       const currentDivision = divisions[selectedDivision];
       if (!currentDivision) return;
 
@@ -263,7 +225,7 @@ const PublicTournamentView: React.FC = () => {
       const { data: playersData, error: playersError } = await supabase
         .from('players')
         .select('*')
-        .eq('tournament_id', tournamentId)
+        .eq('tournament_id', tournament.id)
         .order('rating', { ascending: false });
 
       if (playersError) throw playersError;
@@ -277,7 +239,7 @@ const PublicTournamentView: React.FC = () => {
           player1:players!pairings_player1_id_fkey(id, name, rating),
           player2:players!pairings_player2_id_fkey(id, name, rating)
         `)
-        .eq('tournament_id', tournamentId)
+        .eq('tournament_id', tournament.id)
         .order('round_number')
         .order('table_number');
 
@@ -399,7 +361,7 @@ const PublicTournamentView: React.FC = () => {
     logAction({
       action: 'player_details_viewed',
       details: {
-        tournament_id: tournamentId,
+        tournament_id: tournament?.id,
         player_id: playerId
       }
     });
@@ -407,102 +369,20 @@ const PublicTournamentView: React.FC = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadDivisionData();
+    await loadTournamentData();
     setIsRefreshing(false);
     
-    // Log refresh action
+    // Log manual refresh
     logAction({
-      action: 'tournament_view_refreshed',
+      action: 'tournament_manually_refreshed',
       details: {
-        tournament_id: tournamentId
+        tournament_id: tournament?.id
       }
     });
   };
 
   const handleBackToHome = () => {
     navigate('/');
-  };
-  
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(publicUrlRef.current);
-      setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 2000);
-      
-      // Log link copy action
-      logAction({
-        action: 'tournament_link_copied',
-        details: {
-          tournament_id: tournamentId
-        }
-      });
-    } catch (err) {
-      console.error('Failed to copy link:', err);
-      // Fallback: show alert with link
-      alert(`Tournament link: ${publicUrlRef.current}`);
-    }
-  };
-  
-  const handleShareViaEmail = () => {
-    if (!tournament) return;
-    
-    const subject = encodeURIComponent(`${tournament.name} - Scrabble Tournament`);
-    const body = encodeURIComponent(`Check out the live standings and results for ${tournament.name}:\n\n${publicUrlRef.current}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-    
-    // Log email share action
-    logAction({
-      action: 'tournament_shared_email',
-      details: {
-        tournament_id: tournamentId
-      }
-    });
-  };
-  
-  const handleShareViaFacebook = () => {
-    if (!tournament) return;
-    
-    const url = encodeURIComponent(publicUrlRef.current);
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank');
-    
-    // Log Facebook share action
-    logAction({
-      action: 'tournament_shared_facebook',
-      details: {
-        tournament_id: tournamentId
-      }
-    });
-  };
-  
-  const handleShareViaTwitter = () => {
-    if (!tournament) return;
-    
-    const text = encodeURIComponent(`Check out the live standings and results for ${tournament.name} Scrabble Tournament!`);
-    const url = encodeURIComponent(publicUrlRef.current);
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
-    
-    // Log Twitter share action
-    logAction({
-      action: 'tournament_shared_twitter',
-      details: {
-        tournament_id: tournamentId
-      }
-    });
-  };
-  
-  const handleShareViaWhatsApp = () => {
-    if (!tournament) return;
-    
-    const text = encodeURIComponent(`Check out the live standings and results for ${tournament.name} Scrabble Tournament: ${publicUrlRef.current}`);
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-    
-    // Log WhatsApp share action
-    logAction({
-      action: 'tournament_shared_whatsapp',
-      details: {
-        tournament_id: tournamentId
-      }
-    });
   };
 
   const exportStandings = () => {
@@ -529,11 +409,11 @@ const PublicTournamentView: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
     
-    // Log export action
+    // Log export
     logAction({
-      action: 'tournament_standings_exported',
+      action: 'standings_exported',
       details: {
-        tournament_id: tournamentId,
+        tournament_id: tournament?.id,
         format: 'csv'
       }
     });
@@ -565,53 +445,63 @@ const PublicTournamentView: React.FC = () => {
     }
   };
   
-  const handleSearch = (e: React.FormEvent) => {
+  const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setPasswordError(null);
     
-    if (!searchQuery.trim()) {
-      setHighlightedPlayerId(null);
-      return;
-    }
+    if (!tournament) return;
     
-    // Search in players
-    const foundPlayer = players.find(p => 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    
-    if (foundPlayer) {
-      setHighlightedPlayerId(foundPlayer.id);
+    if (password === tournament.password) {
+      setIsAuthenticated(true);
+      loadDivisionData();
       
-      // Switch to appropriate tab
-      if (activeTab !== 'players' && activeTab !== 'standings') {
-        setActiveTab('players');
-      }
-    } else {
-      // Clear highlight if no match
-      setHighlightedPlayerId(null);
-      
-      // Show toast notification
-      const toast = document.createElement('div');
-      toast.className = 'fixed top-4 right-4 z-50 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-yellow-500/50';
-      toast.innerHTML = `
-        <div class="flex items-center gap-2">
-          <div class="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-          No player found matching "${searchQuery}"
-        </div>
-      `;
-      document.body.appendChild(toast);
-      
-      setTimeout(() => {
-        if (document.body.contains(toast)) {
-          document.body.removeChild(toast);
+      // Log successful password authentication
+      logAction({
+        action: 'tournament_password_authenticated',
+        details: {
+          tournament_id: tournament.id
         }
-      }, 3000);
+      });
+    } else {
+      setPasswordError('Incorrect password');
+      
+      // Log failed password attempt
+      logAction({
+        action: 'tournament_password_failed',
+        details: {
+          tournament_id: tournament.id
+        }
+      });
     }
   };
   
-  const clearSearch = () => {
-    setSearchQuery('');
-    setHighlightedPlayerId(null);
-  };
+  // Filter players based on search query
+  const filteredPlayers = searchQuery
+    ? players.filter(player => 
+        player.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : players;
+    
+  // Filter pairings based on search query
+  const filteredPairings = searchQuery
+    ? Object.entries(pairings).reduce((acc, [round, roundPairings]) => {
+        const filtered = roundPairings.filter(pairing => 
+          pairing.player1.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          pairing.player2.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        if (filtered.length > 0) {
+          acc[parseInt(round)] = filtered;
+        }
+        return acc;
+      }, {} as Record<number, RoundPairing[]>)
+    : pairings;
+    
+  // Filter standings based on search query
+  const filteredStandings = searchQuery
+    ? standings.filter(standing => 
+        standing.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : standings;
 
   if (isLoading) {
     return (
@@ -644,15 +534,14 @@ const PublicTournamentView: React.FC = () => {
   }
   
   // Password protection screen
-  if (isPasswordProtected && !isPasswordVerified) {
+  if (passwordProtected && !isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
         <ParticleBackground />
         
         <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 py-8">
-          <div className="max-w-md w-full bg-gray-900/80 backdrop-blur-lg border-2 border-blue-500/50 rounded-2xl p-8 shadow-2xl">
+          <div className="max-w-md w-full bg-gray-900/80 backdrop-blur-xl border border-purple-500/30 rounded-2xl p-8 shadow-2xl">
             <div className="text-center mb-8">
-              <Lock className="w-16 h-16 text-blue-400 mx-auto mb-4" />
               <h1 className="text-3xl font-bold text-white font-orbitron mb-2">
                 Password Protected
               </h1>
@@ -661,42 +550,63 @@ const PublicTournamentView: React.FC = () => {
               </p>
             </div>
             
-            <div className="space-y-4">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-white font-orbitron mb-4">
+                {tournament.name}
+              </h2>
+              
+              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400 mb-3">
+                {tournament.date && (
+                  <div className="flex items-center gap-1">
+                    <Calendar size={14} />
+                    <span className="font-jetbrains">
+                      {new Date(tournament.date).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                
+                {tournament.venue && (
+                  <div className="flex items-center gap-1">
+                    <MapPin size={14} />
+                    <span className="font-jetbrains">{tournament.venue}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <form onSubmit={handlePasswordSubmit} className="space-y-6">
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2 font-jetbrains">
+                <label className="block text-sm font-medium text-gray-300 mb-2 font-jetbrains">
                   Enter Password
                 </label>
                 <input
                   type="password"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && verifyPassword()}
-                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white font-jetbrains focus:border-blue-500 focus:outline-none transition-colors duration-300"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 font-jetbrains"
                   placeholder="Tournament password"
                 />
+                {passwordError && (
+                  <p className="mt-2 text-red-400 text-sm font-jetbrains">{passwordError}</p>
+                )}
               </div>
-              
-              {passwordError && (
-                <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 text-red-300 font-jetbrains text-sm">
-                  {passwordError}
-                </div>
-              )}
               
               <button
-                onClick={verifyPassword}
-                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                type="submit"
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
               >
+                <Trophy size={16} />
                 Access Tournament
               </button>
-              
-              <div className="text-center">
-                <button
-                  onClick={handleBackToHome}
-                  className="text-gray-400 hover:text-white text-sm font-jetbrains transition-colors duration-200"
-                >
-                  Back to Home
-                </button>
-              </div>
+            </form>
+            
+            <div className="mt-6 text-center">
+              <button
+                onClick={handleBackToHome}
+                className="text-gray-400 hover:text-white font-jetbrains text-sm transition-colors duration-200"
+              >
+                Back to Home
+              </button>
             </div>
           </div>
         </div>
@@ -705,16 +615,6 @@ const PublicTournamentView: React.FC = () => {
   }
 
   const currentDivision = divisions[selectedDivision];
-  
-  // Filter players based on search query
-  const filteredPlayers = searchQuery
-    ? players.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : players;
-    
-  // Filter standings based on search query
-  const filteredStandings = searchQuery
-    ? standings.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : standings;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
@@ -740,135 +640,41 @@ const PublicTournamentView: React.FC = () => {
               <span className="font-jetbrains">Home</span>
             </button>
             
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className={`flex items-center gap-2 px-4 py-2 bg-blue-800/80 backdrop-blur-lg text-blue-300 hover:text-white rounded-lg border border-blue-700/50 hover:border-blue-600/50 transition-all duration-200 ${
-                  isRefreshing ? 'animate-pulse' : ''
-                }`}
-              >
-                <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Sharing Section */}
-        <div className="max-w-6xl mx-auto w-full mb-8">
-          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
-            <h2 className="text-xl font-bold text-white font-orbitron mb-4 flex items-center gap-2">
-              <Share2 size={20} />
-              Share Tournament
-            </h2>
-            
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-              <div className="flex-1">
-                <div className="bg-gray-800/50 border border-gray-600 rounded-lg px-4 py-3 text-white font-jetbrains text-sm break-all">
-                  {publicUrlRef.current}
-                </div>
-              </div>
-              
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={handleCopyLink}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg font-jetbrains text-sm transition-all duration-200 ${
-                    linkCopied
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-800/50 border border-gray-600 text-gray-300 hover:bg-gray-700/50 hover:text-white'
-                  }`}
-                >
-                  {linkCopied ? <Check size={14} /> : <Copy size={14} />}
-                  {linkCopied ? 'Copied!' : 'Copy Link'}
-                </button>
-                
-                <button
-                  onClick={handleShareViaFacebook}
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 border border-blue-500/50 text-blue-400 hover:bg-blue-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
-                >
-                  <Facebook size={14} />
-                  Facebook
-                </button>
-                
-                <button
-                  onClick={handleShareViaTwitter}
-                  className="flex items-center gap-2 px-3 py-2 bg-cyan-600/20 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
-                >
-                  <Twitter size={14} />
-                  Twitter
-                </button>
-                
-                <button
-                  onClick={handleShareViaWhatsApp}
-                  className="flex items-center gap-2 px-3 py-2 bg-green-600/20 border border-green-500/50 text-green-400 hover:bg-green-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
-                >
-                  <span className="text-lg">🟢</span>
-                  WhatsApp
-                </button>
-                
-                <button
-                  onClick={handleShareViaEmail}
-                  className="flex items-center gap-2 px-3 py-2 bg-purple-600/20 border border-purple-500/50 text-purple-400 hover:bg-purple-600/30 hover:text-white rounded-lg font-jetbrains text-sm transition-all duration-200"
-                >
-                  <Mail size={14} />
-                  Email
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tournament Info */}
-        <div className="max-w-6xl mx-auto w-full mt-8 mb-4">
-          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
-            <h2 className="text-lg font-bold text-white font-orbitron mb-4">Tournament Information</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {tournament.date && (
-                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                  <Calendar size={16} className="text-blue-400" />
-                  <span>{new Date(tournament.date).toLocaleDateString()}</span>
-                </div>
-              )}
-              
-              {tournament.venue && (
-                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                  <MapPin size={16} className="text-green-400" />
-                  <span>{tournament.venue}</span>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                <Trophy size={16} className="text-yellow-400" />
-                <span>{tournament.rounds || 7} Rounds</span>
-              </div>
-            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className={`flex items-center gap-2 px-4 py-2 bg-blue-800/80 backdrop-blur-lg text-blue-300 hover:text-white rounded-lg border border-blue-700/50 hover:border-blue-600/50 transition-all duration-200 ${
+                isRefreshing ? 'animate-pulse' : ''
+              }`}
+            >
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="max-w-6xl mx-auto w-full mb-6">
-          <form onSubmit={handleSearch} className="relative">
+        <div className="max-w-6xl mx-auto w-full mb-8">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search players..."
-              className="w-full px-4 py-3 pl-10 bg-gray-800/50 border border-gray-600 rounded-lg text-white font-jetbrains focus:border-blue-500 focus:outline-none transition-colors duration-300"
+              placeholder="Search players, teams, or matches..."
+              className="block w-full pl-10 pr-10 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 font-jetbrains"
             />
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            
             {searchQuery && (
               <button
-                type="button"
-                onClick={clearSearch}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200"
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white"
               >
-                <X size={16} />
+                <X className="h-5 w-5" />
               </button>
             )}
-          </form>
+          </div>
         </div>
 
         {/* Content Controls */}
@@ -970,14 +776,7 @@ const PublicTournamentView: React.FC = () => {
                       <button
                         key={player.id}
                         onClick={() => handlePlayerClick(player.id!)}
-                        className={`bg-gray-800/50 border rounded-lg p-4 transition-all duration-200 text-left group ${
-                          highlightedPlayerId === player.id
-                            ? 'border-yellow-500 bg-yellow-900/20 animate-pulse'
-                            : 'border-gray-600/50 hover:bg-gray-700/50 hover:border-blue-500/50'
-                        }`}
-                        ref={el => {
-                          if (el) playerRefs.current[player.id!] = el;
-                        }}
+                        className="bg-gray-800/50 border border-gray-600/50 rounded-lg p-4 hover:bg-gray-700/50 hover:border-blue-500/50 transition-all duration-200 text-left group"
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-white font-medium group-hover:text-blue-300 transition-colors duration-200">
@@ -1005,22 +804,12 @@ const PublicTournamentView: React.FC = () => {
           {/* Pairings Tab */}
           {activeTab === 'pairings' && (
             <div className="fade-up space-y-8">
-              {Object.keys(pairings).length > 0 ? (
+              {Object.keys(filteredPairings).length > 0 ? (
                 Array.from({ length: maxRounds }, (_, roundIndex) => {
                   const roundNumber = roundIndex + 1;
-                  const roundPairings = pairings[roundNumber] || [];
+                  const roundPairings = filteredPairings[roundNumber] || [];
                   
                   if (roundPairings.length === 0) return null;
-                  
-                  // Filter pairings based on search query
-                  const filteredPairings = searchQuery
-                    ? roundPairings.filter(p => 
-                        p.player1.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        p.player2.name.toLowerCase().includes(searchQuery.toLowerCase())
-                      )
-                    : roundPairings;
-                    
-                  if (filteredPairings.length === 0) return null;
 
                   return (
                     <div key={roundNumber} className="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden backdrop-blur-sm">
@@ -1043,20 +832,13 @@ const PublicTournamentView: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-700">
-                            {filteredPairings.map((pairing) => (
-                              <tr 
-                                key={pairing.id} 
-                                className={`hover:bg-gray-800/30 transition-colors duration-200 ${
-                                  (highlightedPlayerId === pairing.player1_id || highlightedPlayerId === pairing.player2_id)
-                                    ? 'bg-yellow-900/20 border-y border-yellow-500/30'
-                                    : ''
-                                }`}
-                                ref={el => {
-                                  if (el && (pairing.player1_id === highlightedPlayerId || pairing.player2_id === highlightedPlayerId)) {
-                                    playerRefs.current[`pairing-${pairing.id}`] = el;
-                                  }
-                                }}
-                              >
+                            {roundPairings.map((pairing) => (
+                              <tr key={pairing.id} className={`hover:bg-gray-800/30 transition-colors duration-200 ${
+                                searchQuery && (
+                                  pairing.player1.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                  pairing.player2.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                ) ? 'bg-blue-900/20 border-y border-blue-500/30' : ''
+                              }`}>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-white font-mono font-bold">
                                   {pairing.table_number}
                                 </td>
@@ -1068,9 +850,7 @@ const PublicTournamentView: React.FC = () => {
                                     )}
                                     <button
                                       onClick={() => handlePlayerClick(pairing.player1.id)}
-                                      className={`text-left hover:text-blue-300 transition-colors duration-200 ${
-                                        highlightedPlayerId === pairing.player1_id ? 'text-yellow-300' : ''
-                                      }`}
+                                      className="text-left hover:text-blue-300 transition-colors duration-200"
                                     >
                                       <div className="text-sm font-medium text-white">
                                         {pairing.player1.name}
@@ -1101,9 +881,7 @@ const PublicTournamentView: React.FC = () => {
                                     )}
                                     <button
                                       onClick={() => handlePlayerClick(pairing.player2.id)}
-                                      className={`text-left hover:text-blue-300 transition-colors duration-200 ${
-                                        highlightedPlayerId === pairing.player2_id ? 'text-yellow-300' : ''
-                                      }`}
+                                      className="text-left hover:text-blue-300 transition-colors duration-200"
                                     >
                                       <div className="text-sm font-medium text-white">
                                         {pairing.player2.name}
@@ -1135,18 +913,14 @@ const PublicTournamentView: React.FC = () => {
                           </tbody>
                         </table>
                       </div>
-                      
-                      {filteredPairings.length === 0 && (
-                        <div className="text-center py-8 text-gray-400 font-jetbrains">
-                          No pairings match your search
-                        </div>
-                      )}
                     </div>
                   );
                 })
               ) : (
                 <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-12 text-center backdrop-blur-sm">
-                  <p className="text-gray-400 font-jetbrains">No pairings available yet</p>
+                  <p className="text-gray-400 font-jetbrains">
+                    {searchQuery ? 'No pairings match your search' : 'No pairings available yet'}
+                  </p>
                 </div>
               )}
             </div>
@@ -1188,13 +962,12 @@ const PublicTournamentView: React.FC = () => {
                         <tr 
                           key={standing.id} 
                           className={`transition-colors duration-200 hover:bg-gray-800/30 ${
-                            highlightedPlayerId === standing.id
-                              ? 'bg-yellow-900/20 border-y border-yellow-500/30'
-                              : getRankStyle(standing.rank)
+                            getRankStyle(standing.rank)
+                          } ${
+                            searchQuery && standing.name.toLowerCase().includes(searchQuery.toLowerCase())
+                              ? 'bg-blue-900/20 border-y border-blue-500/30'
+                              : ''
                           }`}
-                          ref={el => {
-                            if (el) playerRefs.current[standing.id] = el;
-                          }}
                         >
                           <td className="px-4 py-4 whitespace-nowrap">
                             <div className="flex items-center gap-2">
@@ -1209,9 +982,7 @@ const PublicTournamentView: React.FC = () => {
                               onClick={() => handlePlayerClick(standing.id)}
                               className="text-left hover:bg-blue-500/20 rounded-lg p-2 -m-2 transition-all duration-200 group"
                             >
-                              <div className={`text-sm font-medium group-hover:text-blue-300 transition-colors duration-200 ${
-                                highlightedPlayerId === standing.id ? 'text-yellow-300' : 'text-white'
-                              }`}>
+                              <div className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors duration-200">
                                 {standing.name}
                               </div>
                               <div className="text-xs text-gray-400 font-jetbrains">
@@ -1286,7 +1057,7 @@ const PublicTournamentView: React.FC = () => {
             setSelectedPlayerId(null);
           }}
           playerId={selectedPlayerId}
-          tournamentId={tournamentId!}
+          tournamentId={tournament.id}
         />
       )}
 

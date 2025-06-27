@@ -167,7 +167,7 @@ function HomePage() {
       // Load tournament name for QR code
       const { data: tournamentData } = await supabase
         .from('tournaments')
-        .select('name')
+        .select('name, slug')
         .eq('id', tournamentId)
         .single();
 
@@ -186,7 +186,8 @@ function HomePage() {
         action: 'tournament_flow_started',
         details: {
           tournament_id: tournamentId,
-          tournament_name: tournamentData?.name
+          tournament_name: tournamentData?.name,
+          tournament_slug: tournamentData?.slug
         }
       });
     } catch (err) {
@@ -208,7 +209,7 @@ function HomePage() {
       // Load tournament name for QR code
       const { data: tournamentData } = await supabase
         .from('tournaments')
-        .select('name, status')
+        .select('name, status, slug')
         .eq('id', tournamentId)
         .single();
 
@@ -223,7 +224,8 @@ function HomePage() {
           tournament_id: tournamentId,
           tournament_name: tournamentData?.name,
           current_round: round,
-          status: tournamentData?.status
+          status: tournamentData?.status,
+          tournament_slug: tournamentData?.slug
         }
       });
       
@@ -361,18 +363,34 @@ function HomePage() {
   const copyTournamentLink = async () => {
     if (!currentTournamentId) return;
     
-    const link = `${window.location.origin}/t/${currentTournamentId}`;
-    
     try {
+      // Get tournament slug
+      const { data: tournamentData } = await supabase
+        .from('tournaments')
+        .select('slug')
+        .eq('id', currentTournamentId)
+        .single();
+      
+      // Use slug if available, otherwise use ID
+      const slug = tournamentData?.slug || currentTournamentId;
+      const link = `https://direktorweb.com/tournaments/${slug}`;
+      
       await navigator.clipboard.writeText(link);
       // Show toast notification
       const toast = document.createElement('div');
-      toast.className = 'fixed top-4 right-4 z-50 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg font-jetbrains text-sm';
-      toast.textContent = 'Tournament link copied to clipboard!';
+      toast.className = 'fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-green-500/50';
+      toast.innerHTML = `
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          Tournament link copied to clipboard!
+        </div>
+      `;
       document.body.appendChild(toast);
       
       setTimeout(() => {
-        document.body.removeChild(toast);
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
       }, 3000);
       
       // Log link copy
@@ -380,11 +398,14 @@ function HomePage() {
         action: 'tournament_link_copied',
         details: {
           tournament_id: currentTournamentId,
-          tournament_name: currentTournamentName
+          tournament_name: currentTournamentName,
+          link_type: 'slug'
         }
       });
     } catch (err) {
       console.error('Failed to copy link:', err);
+      // Fallback to ID-based link
+      const link = `https://direktorweb.com/tournaments/${currentTournamentId}`;
       alert(`Tournament link: ${link}`);
     }
   };
@@ -722,6 +743,7 @@ function App() {
         <Route path="/history" element={<DashboardRoute />} />
         <Route path="/tournament/:tournamentId/dashboard" element={<TournamentControlCenterRoute />} />
         <Route path="/t/:tournamentId" element={<PublicTournamentRoute />} />
+        <Route path="/tournaments/:slug" element={<PublicTournamentRoute />} />
         <Route path="/projector/:tournamentId/:divisionId" element={<ProjectionModeRoute />} />
         <Route path="/leaderboard/directors" element={<DirectorsLeaderboardRoute />} />
       </Routes>
