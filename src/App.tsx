@@ -45,7 +45,7 @@ function ProtectedRoute({ children, user, loading }: ProtectedRouteProps) {
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth/signin" replace />;
   }
 
   return <>{children}</>;
@@ -653,6 +653,21 @@ function HomePage() {
   );
 }
 
+// Statistics Route Component
+function StatisticsRoute() {
+  const { tournamentId, slug } = useParams<{ tournamentId?: string; slug?: string }>();
+  
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    }>
+      <Statistics tournamentId={tournamentId} isPublic={true} />
+    </Suspense>
+  );
+}
+
 // Public Tournament Route Component
 function PublicTournamentRoute() {
   return <PublicTournamentView />;
@@ -667,21 +682,6 @@ function ProjectionModeRoute() {
       </div>
     }>
       <ProjectionMode />
-    </Suspense>
-  );
-}
-
-// Statistics Route Component
-function StatisticsRoute() {
-  const { tournamentId, slug } = useParams<{ tournamentId?: string; slug?: string }>();
-  
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-      </div>
-    }>
-      <Statistics tournamentId={tournamentId} isPublic={true} />
     </Suspense>
   );
 }
@@ -772,14 +772,14 @@ function TournamentControlCenterRoute() {
       setUser(session?.user ?? null);
       setLoading(false);
       if (!session?.user) {
-        navigate('/auth');
+        navigate('/auth/signin');
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (!session?.user) {
-        navigate('/auth');
+        navigate('/auth/signin');
       }
     });
 

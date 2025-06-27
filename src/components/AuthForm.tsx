@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User, LogIn, Eye, EyeOff } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ParticleBackground from './ParticleBackground';
 import { useAuditLog } from '../hooks/useAuditLog';
