@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Play, Lock, Users, Settings, Crown, Zap, Info, Target, Brain, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Play, Lock, Users, Settings, Crown, Zap, Info, Target, Brain, TrendingUp, AlertTriangle, BarChart3, Edit3, History } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
 import StandingsImpactVisualizer from './StandingsImpactVisualizer';
+import AIInsightsPanel from './AIInsightsPanel';
 import { supabase } from '../lib/supabase';
+import { useAuditLog } from '../hooks/useAuditLog';
 import { Tournament, Player, PlayerWithRank, PairingDisplay, PairingFormat, Pairing } from '../types/database';
 import { generatePairings } from '../utils/pairingAlgorithms';
 import { 
@@ -32,9 +34,15 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [showStrategyAnalysis, setShowStrategyAnalysis] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [showImpactVisualizer, setShowImpactVisualizer] = useState(false);
+  const [showAIInsights, setShowAIInsights] = useState(false);
+  const [showPastRounds, setShowPastRounds] = useState(false);
+  const [pastRoundPairings, setPastRoundPairings] = useState<Record<number, PairingDisplay[]>>({});
+  
+  const { logAction } = useAuditLog();
 
   useEffect(() => {
     loadTournamentData();
@@ -52,6 +60,11 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
       if (tournamentError) throw tournamentError;
       setTournament(tournamentData);
       setCurrentRound(tournamentData.current_round || 1);
+      
+      // Set pairing format from tournament if available
+      if (tournamentData.pairing_system) {
+        setPairingFormat(tournamentData.pairing_system as PairingFormat);
+      }
 
       // Load players
       const { data: playersData, error: playersError } = await supabase
@@ -135,9 +148,89 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
       );
 
       setPlayers(playersWithStats);
+      
+      // Load past rounds pairings
+      if (currentRound > 1) {
+        await loadPastRoundsPairings(tournamentData.current_round || 1);
+      }
+      
+      // Log access
+      logAction({
+        action: 'round_manager_loaded',
+        details: {
+          tournament_id: tournamentId,
+          current_round: tournamentData.current_round || 1,
+          player_count: playersData.length
+        }
+      });
     } catch (err) {
       console.error('Error loading tournament data:', err);
       setError('Failed to load tournament data');
+    }
+  };
+  
+  const loadPastRoundsPairings = async (currentRound: number) => {
+    try {
+      const pastRounds: Record<number, PairingDisplay[]> = {};
+      
+      // Load pairings for past rounds
+      for (let round = 1; round < currentRound; round++) {
+        const { data: pairingsData, error: pairingsError } = await supabase
+          .from('pairings')
+          .select(`
+            *,
+            player1:players!pairings_player1_id_fkey(id, name, rating, team_name),
+            player2:players!pairings_player2_id_fkey(id, name, rating, team_name)
+          `)
+          .eq('tournament_id', tournamentId)
+          .eq('round_number', round)
+          .order('table_number');
+          
+        if (pairingsError) throw pairingsError;
+        
+        // Convert to PairingDisplay format
+        const displayPairings: PairingDisplay[] = (pairingsData || []).map(pairing => {
+          // Add missing fields to match PlayerWithRank
+          const player1WithRank = {
+            ...pairing.player1,
+            rank: 0,
+            previous_starts: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            points: 0,
+            spread: 0,
+            is_gibsonized: pairing.player1_gibsonized || false
+          };
+          
+          const player2WithRank = {
+            ...pairing.player2,
+            rank: 0,
+            previous_starts: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            points: 0,
+            spread: 0,
+            is_gibsonized: pairing.player2_gibsonized || false
+          };
+          
+          return {
+            table_number: pairing.table_number,
+            player1: player1WithRank,
+            player2: player2WithRank,
+            first_move_player_id: pairing.first_move_player_id,
+            player1_gibsonized: pairing.player1_gibsonized || false,
+            player2_gibsonized: pairing.player2_gibsonized || false
+          };
+        });
+        
+        pastRounds[round] = displayPairings;
+      }
+      
+      setPastRoundPairings(pastRounds);
+    } catch (err) {
+      console.error('Error loading past rounds pairings:', err);
     }
   };
 
@@ -149,6 +242,7 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
 
     setIsGenerating(true);
     setError(null);
+    setWarnings([]);
 
     try {
       // Get previous pairings for rematch avoidance
@@ -167,12 +261,72 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
       );
 
       setPairings(newPairings);
+      
+      // Validate pairings for warnings
+      validatePairings(newPairings);
+      
+      // Log pairing generation
+      logAction({
+        action: 'pairings_generated',
+        details: {
+          tournament_id: tournamentId,
+          round: currentRound,
+          pairing_format: pairingFormat,
+          avoid_rematches: avoidRematches,
+          enable_gibsonization: enableGibsonization,
+          pairing_count: newPairings.length
+        }
+      });
     } catch (err) {
       console.error('Error generating pairings:', err);
       setError('Failed to generate pairings');
     } finally {
       setIsGenerating(false);
     }
+  };
+  
+  const validatePairings = (pairings: PairingDisplay[]) => {
+    const newWarnings: string[] = [];
+    
+    // Check for duplicate players
+    const playerCounts: Record<string, number> = {};
+    pairings.forEach(pairing => {
+      if (pairing.player1.id !== 'bye') {
+        playerCounts[pairing.player1.id!] = (playerCounts[pairing.player1.id!] || 0) + 1;
+      }
+      if (pairing.player2.id !== 'bye') {
+        playerCounts[pairing.player2.id!] = (playerCounts[pairing.player2.id!] || 0) + 1;
+      }
+    });
+    
+    const duplicatePlayers = Object.entries(playerCounts)
+      .filter(([_, count]) => count > 1)
+      .map(([id]) => players.find(p => p.id === id)?.name || id);
+      
+    if (duplicatePlayers.length > 0) {
+      newWarnings.push(`Duplicate players detected: ${duplicatePlayers.join(', ')}`);
+    }
+    
+    // Check for team members playing each other in team mode
+    if (tournament?.team_mode) {
+      const sameTeamPairings = pairings.filter(pairing => 
+        pairing.player1.team_name && 
+        pairing.player2.team_name && 
+        pairing.player1.team_name === pairing.player2.team_name
+      );
+      
+      if (sameTeamPairings.length > 0) {
+        newWarnings.push(`${sameTeamPairings.length} pairings have players from the same team`);
+      }
+    }
+    
+    // Check for rematches if avoid rematches is enabled
+    if (avoidRematches) {
+      // This would require checking against all previous pairings
+      // For simplicity, we'll skip this check here
+    }
+    
+    setWarnings(newWarnings);
   };
 
   const handleLockPairings = async () => {
@@ -213,6 +367,16 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
         .insert(pairingsToInsert);
 
       if (insertError) throw insertError;
+      
+      // Log pairings locked
+      logAction({
+        action: 'pairings_locked',
+        details: {
+          tournament_id: tournamentId,
+          round: currentRound,
+          pairing_count: pairingsToInsert.length
+        }
+      });
 
       // Navigate to Score Entry screen
       onNext();
@@ -342,6 +506,14 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
               </h2>
               
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAIInsights(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 border border-purple-500/50 text-purple-400 hover:bg-purple-600/30 hover:text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
+                >
+                  <Brain size={16} />
+                  AI Insights
+                </button>
+                
                 <button
                   onClick={() => setShowImpactVisualizer(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-orange-600/20 border border-orange-500/50 text-orange-400 hover:bg-orange-600/30 hover:text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
@@ -493,6 +665,23 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
                 )}
               </div>
             </div>
+            
+            {/* Past Rounds Toggle */}
+            {currentRound > 1 && (
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => setShowPastRounds(!showPastRounds)}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-jetbrains text-sm transition-all duration-200 ${
+                    showPastRounds
+                      ? 'bg-gray-700 text-white'
+                      : 'bg-gray-800/50 border border-gray-600 text-gray-300 hover:bg-gray-700/50 hover:text-white'
+                  }`}
+                >
+                  <History size={16} />
+                  {showPastRounds ? 'Hide Past Rounds' : 'View Past Rounds'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -672,9 +861,132 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
             </div>
           </div>
         )}
+        
+        {/* Warnings Display */}
+        {warnings.length > 0 && (
+          <div className="max-w-6xl mx-auto w-full mb-8">
+            <div className="bg-yellow-900/30 border border-yellow-500/50 rounded-lg p-4 text-yellow-300 font-jetbrains text-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={16} />
+                <span className="font-bold">Warnings</span>
+              </div>
+              <ul className="space-y-1 ml-6 list-disc">
+                {warnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* Gibsonization Banner */}
         {pairings.length > 0 && getGibsonizationBanner()}
+        
+        {/* Past Rounds Pairings */}
+        {showPastRounds && Object.keys(pastRoundPairings).length > 0 && (
+          <div className="fade-up max-w-6xl mx-auto w-full mb-8">
+            <div className="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden backdrop-blur-sm">
+              <div className="p-6 border-b border-gray-700">
+                <h2 className="text-xl font-bold text-white font-orbitron flex items-center gap-2">
+                  <History size={24} />
+                  Past Rounds Pairings
+                </h2>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {Object.entries(pastRoundPairings).map(([round, roundPairings]) => (
+                  <div key={round} className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
+                    <div className="p-4 border-b border-gray-700 bg-gray-800/80">
+                      <h3 className="font-bold text-white font-orbitron">Round {round}</h3>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-800/50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Table</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 1</th>
+                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">VS</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 2</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">First Move</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-700">
+                          {roundPairings.map((pairing) => (
+                            <tr key={pairing.table_number} className="bg-gray-900/30 hover:bg-gray-800/30 transition-colors duration-200">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-white font-mono font-bold">
+                                {pairing.table_number}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  {pairing.first_move_player_id === pairing.player1.id && (
+                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                  )}
+                                  {pairing.player1_gibsonized && (
+                                    <div className="relative group">
+                                      <Crown size={16} className="text-yellow-400" />
+                                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                                        Gibsonized
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm font-medium text-white">
+                                      {pairing.player1.name}
+                                    </div>
+                                    <div className="text-xs text-gray-400 font-jetbrains">
+                                      {pairing.player1.rating}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="text-gray-500 font-bold">VS</span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  {pairing.first_move_player_id === pairing.player2.id && (
+                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                  )}
+                                  {pairing.player2_gibsonized && (
+                                    <div className="relative group">
+                                      <Crown size={16} className="text-yellow-400" />
+                                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 border border-gray-600">
+                                        Gibsonized
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm font-medium text-white">
+                                      {pairing.player2.name}
+                                    </div>
+                                    <div className="text-xs text-gray-400 font-jetbrains">
+                                      {pairing.player2.rating}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                  <span className="text-sm text-green-400 font-jetbrains">
+                                    {pairing.first_move_player_id === pairing.player1.id 
+                                      ? pairing.player1.name 
+                                      : pairing.player2.name}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Pairings Table */}
         {pairings.length > 0 && (
@@ -821,6 +1133,14 @@ const RoundManager: React.FC<RoundManagerProps> = ({ onBack, onNext, tournamentI
       <StandingsImpactVisualizer
         isOpen={showImpactVisualizer}
         onClose={() => setShowImpactVisualizer(false)}
+        tournamentId={tournamentId}
+        currentRound={currentRound}
+      />
+      
+      {/* AI Insights Panel */}
+      <AIInsightsPanel
+        isOpen={showAIInsights}
+        onClose={() => setShowAIInsights(false)}
         tournamentId={tournamentId}
         currentRound={currentRound}
       />

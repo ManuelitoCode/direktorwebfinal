@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { set, get, del } from 'idb-keyval';
+import { useAuditLog } from './useAuditLog';
 
 interface OfflineData {
   tournaments: any[];
@@ -23,18 +24,36 @@ export function useOfflineMode() {
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  
+  const { logAction } = useAuditLog();
 
   // Initialize offline mode detection
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
       syncPendingChanges();
+      
+      // Log reconnection
+      logAction({
+        action: 'connection_restored',
+        details: {
+          pending_changes: pendingChanges.length
+        }
+      });
     };
 
     const handleOffline = () => {
       setIsOnline(false);
       setIsOfflineMode(true);
       showOfflineToast();
+      
+      // Log disconnection
+      logAction({
+        action: 'connection_lost',
+        details: {
+          timestamp: new Date().toISOString()
+        }
+      });
     };
 
     window.addEventListener('online', handleOnline);
@@ -83,6 +102,16 @@ export function useOfflineMode() {
       
       const updatedChanges = [...pendingChanges, newChange];
       await savePendingChanges(updatedChanges);
+      
+      // Log offline change
+      logAction({
+        action: 'offline_change_recorded',
+        details: {
+          table: change.table,
+          operation: change.operation,
+          id: change.id
+        }
+      });
       
       return true;
     } catch (err) {
@@ -141,9 +170,30 @@ export function useOfflineMode() {
           
           if (success) {
             successfulChanges.push(change.id);
+            
+            // Log successful sync
+            logAction({
+              action: 'offline_change_synced',
+              details: {
+                table: change.table,
+                operation: change.operation,
+                id: change.id
+              }
+            });
           }
         } catch (err) {
           console.error(`Error syncing change ${change.id}:`, err);
+          
+          // Log sync error
+          logAction({
+            action: 'offline_sync_error',
+            details: {
+              table: change.table,
+              operation: change.operation,
+              id: change.id,
+              error: String(err)
+            }
+          });
         }
       }
       
@@ -158,10 +208,27 @@ export function useOfflineMode() {
         // Show success toast if all changes synced
         if (remainingChanges.length === 0) {
           showSyncSuccessToast();
+          
+          // Log all changes synced
+          logAction({
+            action: 'all_offline_changes_synced',
+            details: {
+              count: successfulChanges.length
+            }
+          });
         }
       }
     } catch (err) {
       console.error('Error syncing pending changes:', err);
+      
+      // Log sync failure
+      logAction({
+        action: 'offline_sync_failed',
+        details: {
+          error: String(err),
+          pending_count: pendingChanges.length
+        }
+      });
     } finally {
       setIsSyncing(false);
     }
@@ -207,8 +274,28 @@ export function useOfflineMode() {
       };
       
       await set(`tournament_${tournamentId}`, offlineData);
+      
+      // Log cache operation
+      logAction({
+        action: 'tournament_data_cached',
+        details: {
+          tournament_id: tournamentId,
+          players_count: players?.length || 0,
+          pairings_count: pairings?.length || 0,
+          results_count: results?.length || 0
+        }
+      });
     } catch (err) {
       console.error('Error caching tournament data:', err);
+      
+      // Log cache error
+      logAction({
+        action: 'tournament_cache_error',
+        details: {
+          tournament_id: tournamentId,
+          error: String(err)
+        }
+      });
     }
   };
 
@@ -227,6 +314,14 @@ export function useOfflineMode() {
   const clearCachedTournamentData = async (tournamentId: string) => {
     try {
       await del(`tournament_${tournamentId}`);
+      
+      // Log cache cleared
+      logAction({
+        action: 'tournament_cache_cleared',
+        details: {
+          tournament_id: tournamentId
+        }
+      });
     } catch (err) {
       console.error('Error clearing cached tournament data:', err);
     }

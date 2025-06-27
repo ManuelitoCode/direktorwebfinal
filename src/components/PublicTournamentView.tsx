@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Copy, Check, Share2, Lock, Facebook, Twitter, Mail } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Copy, Check, Share2, Lock, Facebook, Twitter, Mail, Search, X, Filter } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import PlayerDetailsModal from './PlayerDetailsModal';
 import TournamentHeader from './TournamentHeader';
 import { supabase } from '../lib/supabase';
-import { Tournament, Division, Player, PairingWithPlayers, Result } from '../types/database';
 import { useAuditLog } from '../hooks/useAuditLog';
+import { Tournament, Division, Player, PairingWithPlayers, Result } from '../types/database';
 
 interface PlayerStanding {
   id: string;
@@ -48,7 +48,12 @@ const PublicTournamentView: React.FC = () => {
   const [isPasswordVerified, setIsPasswordVerified] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
+  const [realtimeSubscription, setRealtimeSubscription] = useState<any>(null);
+  
   const publicUrlRef = useRef<string>('');
+  const playerRefs = useRef<Record<string, HTMLElement>>({});
   
   const { logAction } = useAuditLog();
 
@@ -66,13 +71,31 @@ const PublicTournamentView: React.FC = () => {
     if (tournamentId) {
       checkTournamentAccess();
     }
+    
+    return () => {
+      // Clean up realtime subscription
+      if (realtimeSubscription) {
+        realtimeSubscription.unsubscribe();
+      }
+    };
   }, [tournamentId]);
 
   useEffect(() => {
     if (divisions.length > 0 && isPasswordVerified) {
       loadDivisionData();
+      setupRealtimeSubscription();
     }
   }, [selectedDivision, divisions, isPasswordVerified]);
+  
+  useEffect(() => {
+    // Scroll to highlighted player if needed
+    if (highlightedPlayerId && playerRefs.current[highlightedPlayerId]) {
+      playerRefs.current[highlightedPlayerId].scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      });
+    }
+  }, [highlightedPlayerId, activeTab]);
 
   const checkTournamentAccess = async () => {
     try {
@@ -183,6 +206,52 @@ const PublicTournamentView: React.FC = () => {
         }
       });
     }
+  };
+  
+  const setupRealtimeSubscription = () => {
+    // Clean up existing subscription if any
+    if (realtimeSubscription) {
+      realtimeSubscription.unsubscribe();
+    }
+    
+    // Set up realtime subscription for results
+    const subscription = supabase
+      .channel('public:results')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'results',
+          filter: `tournament_id=eq.${tournamentId}`
+        }, 
+        (payload) => {
+          console.log('Realtime update:', payload);
+          // Refresh data when results change
+          loadDivisionData();
+        }
+      )
+      .subscribe();
+      
+    // Set up realtime subscription for pairings
+    const pairingsSubscription = supabase
+      .channel('public:pairings')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'pairings',
+          filter: `tournament_id=eq.${tournamentId}`
+        }, 
+        (payload) => {
+          console.log('Realtime pairing update:', payload);
+          // Refresh data when pairings change
+          loadDivisionData();
+        }
+      )
+      .subscribe();
+      
+    // Store subscription for cleanup
+    setRealtimeSubscription(subscription);
   };
 
   const loadDivisionData = async () => {
@@ -353,7 +422,7 @@ const PublicTournamentView: React.FC = () => {
   const handleBackToHome = () => {
     navigate('/');
   };
-
+  
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(publicUrlRef.current);
@@ -373,7 +442,7 @@ const PublicTournamentView: React.FC = () => {
       alert(`Tournament link: ${publicUrlRef.current}`);
     }
   };
-
+  
   const handleShareViaEmail = () => {
     if (!tournament) return;
     
@@ -389,7 +458,7 @@ const PublicTournamentView: React.FC = () => {
       }
     });
   };
-
+  
   const handleShareViaFacebook = () => {
     if (!tournament) return;
     
@@ -404,7 +473,7 @@ const PublicTournamentView: React.FC = () => {
       }
     });
   };
-
+  
   const handleShareViaTwitter = () => {
     if (!tournament) return;
     
@@ -420,7 +489,7 @@ const PublicTournamentView: React.FC = () => {
       }
     });
   };
-
+  
   const handleShareViaWhatsApp = () => {
     if (!tournament) return;
     
@@ -495,6 +564,54 @@ const PublicTournamentView: React.FC = () => {
         return `#${rank}`;
     }
   };
+  
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!searchQuery.trim()) {
+      setHighlightedPlayerId(null);
+      return;
+    }
+    
+    // Search in players
+    const foundPlayer = players.find(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
+    if (foundPlayer) {
+      setHighlightedPlayerId(foundPlayer.id);
+      
+      // Switch to appropriate tab
+      if (activeTab !== 'players' && activeTab !== 'standings') {
+        setActiveTab('players');
+      }
+    } else {
+      // Clear highlight if no match
+      setHighlightedPlayerId(null);
+      
+      // Show toast notification
+      const toast = document.createElement('div');
+      toast.className = 'fixed top-4 right-4 z-50 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg font-jetbrains text-sm border border-yellow-500/50';
+      toast.innerHTML = `
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+          No player found matching "${searchQuery}"
+        </div>
+      `;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 3000);
+    }
+  };
+  
+  const clearSearch = () => {
+    setSearchQuery('');
+    setHighlightedPlayerId(null);
+  };
 
   if (isLoading) {
     return (
@@ -525,7 +642,7 @@ const PublicTournamentView: React.FC = () => {
   if (!tournament) {
     return null;
   }
-
+  
   // Password protection screen
   if (isPasswordProtected && !isPasswordVerified) {
     return (
@@ -588,6 +705,16 @@ const PublicTournamentView: React.FC = () => {
   }
 
   const currentDivision = divisions[selectedDivision];
+  
+  // Filter players based on search query
+  const filteredPlayers = searchQuery
+    ? players.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : players;
+    
+  // Filter standings based on search query
+  const filteredStandings = searchQuery
+    ? standings.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : standings;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden">
@@ -692,6 +819,58 @@ const PublicTournamentView: React.FC = () => {
           </div>
         </div>
 
+        {/* Tournament Info */}
+        <div className="max-w-6xl mx-auto w-full mt-8 mb-4">
+          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
+            <h2 className="text-lg font-bold text-white font-orbitron mb-4">Tournament Information</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {tournament.date && (
+                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                  <Calendar size={16} className="text-blue-400" />
+                  <span>{new Date(tournament.date).toLocaleDateString()}</span>
+                </div>
+              )}
+              
+              {tournament.venue && (
+                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                  <MapPin size={16} className="text-green-400" />
+                  <span>{tournament.venue}</span>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
+                <Trophy size={16} className="text-yellow-400" />
+                <span>{tournament.rounds || 7} Rounds</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="max-w-6xl mx-auto w-full mb-6">
+          <form onSubmit={handleSearch} className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search players..."
+              className="w-full px-4 py-3 pl-10 bg-gray-800/50 border border-gray-600 rounded-lg text-white font-jetbrains focus:border-blue-500 focus:outline-none transition-colors duration-300"
+            />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </form>
+        </div>
+
         {/* Content Controls */}
         <div className="text-center mb-12 max-w-6xl mx-auto">
           {/* Division Tabs */}
@@ -781,17 +960,24 @@ const PublicTournamentView: React.FC = () => {
                 <div className="p-6 border-b border-gray-700">
                   <h2 className="text-xl font-bold text-white font-orbitron flex items-center gap-2">
                     <Users size={24} />
-                    Registered Players ({players.length})
+                    Registered Players ({filteredPlayers.length})
                   </h2>
                 </div>
                 
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {players.map((player, index) => (
+                    {filteredPlayers.map((player, index) => (
                       <button
                         key={player.id}
                         onClick={() => handlePlayerClick(player.id!)}
-                        className="bg-gray-800/50 border border-gray-600/50 rounded-lg p-4 hover:bg-gray-700/50 hover:border-blue-500/50 transition-all duration-200 text-left group"
+                        className={`bg-gray-800/50 border rounded-lg p-4 transition-all duration-200 text-left group ${
+                          highlightedPlayerId === player.id
+                            ? 'border-yellow-500 bg-yellow-900/20 animate-pulse'
+                            : 'border-gray-600/50 hover:bg-gray-700/50 hover:border-blue-500/50'
+                        }`}
+                        ref={el => {
+                          if (el) playerRefs.current[player.id!] = el;
+                        }}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-white font-medium group-hover:text-blue-300 transition-colors duration-200">
@@ -806,9 +992,9 @@ const PublicTournamentView: React.FC = () => {
                     ))}
                   </div>
                   
-                  {players.length === 0 && (
+                  {filteredPlayers.length === 0 && (
                     <div className="text-center py-12 text-gray-400 font-jetbrains">
-                      No players registered yet
+                      {searchQuery ? 'No players match your search' : 'No players registered yet'}
                     </div>
                   )}
                 </div>
@@ -819,114 +1005,146 @@ const PublicTournamentView: React.FC = () => {
           {/* Pairings Tab */}
           {activeTab === 'pairings' && (
             <div className="fade-up space-y-8">
-              {Array.from({ length: maxRounds }, (_, roundIndex) => {
-                const roundNumber = roundIndex + 1;
-                const roundPairings = pairings[roundNumber] || [];
-                
-                if (roundPairings.length === 0) return null;
-
-                return (
-                  <div key={roundNumber} className="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden backdrop-blur-sm">
-                    <div className="p-6 border-b border-gray-700">
-                      <h3 className="text-lg font-bold text-white font-orbitron">
-                        Round {roundNumber}
-                      </h3>
-                    </div>
+              {Object.keys(pairings).length > 0 ? (
+                Array.from({ length: maxRounds }, (_, roundIndex) => {
+                  const roundNumber = roundIndex + 1;
+                  const roundPairings = pairings[roundNumber] || [];
+                  
+                  if (roundPairings.length === 0) return null;
+                  
+                  // Filter pairings based on search query
+                  const filteredPairings = searchQuery
+                    ? roundPairings.filter(p => 
+                        p.player1.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        p.player2.name.toLowerCase().includes(searchQuery.toLowerCase())
+                      )
+                    : roundPairings;
                     
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-gray-800/50">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Table</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 1</th>
-                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Score</th>
-                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Score</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 2</th>
-                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Result</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-700">
-                          {roundPairings.map((pairing) => (
-                            <tr key={pairing.id} className="hover:bg-gray-800/30 transition-colors duration-200">
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-white font-mono font-bold">
-                                {pairing.table_number}
-                              </td>
-                              
-                              <td className="px-4 py-4 whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  {pairing.first_move_player_id === pairing.player1_id && (
-                                    <div className="w-3 h-3 bg-green-500 rounded-full" title="First move"></div>
-                                  )}
-                                  <button
-                                    onClick={() => handlePlayerClick(pairing.player1.id)}
-                                    className="text-left hover:text-blue-300 transition-colors duration-200"
-                                  >
-                                    <div className="text-sm font-medium text-white">
-                                      {pairing.player1.name}
-                                    </div>
-                                    <div className="text-xs text-gray-400 font-jetbrains">
-                                      #{pairing.player1_rank} • {pairing.player1.rating}
-                                    </div>
-                                  </button>
-                                </div>
-                              </td>
-                              
-                              <td className="px-4 py-4 text-center">
-                                <span className="text-lg font-bold text-white font-mono">
-                                  {pairing.result?.player1_score ?? '—'}
-                                </span>
-                              </td>
-                              
-                              <td className="px-4 py-4 text-center">
-                                <span className="text-lg font-bold text-white font-mono">
-                                  {pairing.result?.player2_score ?? '—'}
-                                </span>
-                              </td>
-                              
-                              <td className="px-4 py-4 whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  {pairing.first_move_player_id === pairing.player2_id && (
-                                    <div className="w-3 h-3 bg-green-500 rounded-full" title="First move"></div>
-                                  )}
-                                  <button
-                                    onClick={() => handlePlayerClick(pairing.player2.id)}
-                                    className="text-left hover:text-blue-300 transition-colors duration-200"
-                                  >
-                                    <div className="text-sm font-medium text-white">
-                                      {pairing.player2.name}
-                                    </div>
-                                    <div className="text-xs text-gray-400 font-jetbrains">
-                                      #{pairing.player2_rank} • {pairing.player2.rating}
-                                    </div>
-                                  </button>
-                                </div>
-                              </td>
-                              
-                              <td className="px-4 py-4 text-center">
-                                {pairing.result ? (
-                                  <div className="flex items-center justify-center">
-                                    {pairing.result.winner_id === pairing.player1_id ? (
-                                      <span className="text-green-400 font-jetbrains text-sm">P1 Wins</span>
-                                    ) : pairing.result.winner_id === pairing.player2_id ? (
-                                      <span className="text-green-400 font-jetbrains text-sm">P2 Wins</span>
-                                    ) : (
-                                      <span className="text-yellow-400 font-jetbrains text-sm">Tie</span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-500 font-jetbrains text-sm">Pending</span>
-                                )}
-                              </td>
+                  if (filteredPairings.length === 0) return null;
+
+                  return (
+                    <div key={roundNumber} className="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden backdrop-blur-sm">
+                      <div className="p-6 border-b border-gray-700">
+                        <h3 className="text-lg font-bold text-white font-orbitron">
+                          Round {roundNumber}
+                        </h3>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-800/50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Table</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 1</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Score</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Score</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player 2</th>
+                              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Result</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-gray-700">
+                            {filteredPairings.map((pairing) => (
+                              <tr 
+                                key={pairing.id} 
+                                className={`hover:bg-gray-800/30 transition-colors duration-200 ${
+                                  (highlightedPlayerId === pairing.player1_id || highlightedPlayerId === pairing.player2_id)
+                                    ? 'bg-yellow-900/20 border-y border-yellow-500/30'
+                                    : ''
+                                }`}
+                                ref={el => {
+                                  if (el && (pairing.player1_id === highlightedPlayerId || pairing.player2_id === highlightedPlayerId)) {
+                                    playerRefs.current[`pairing-${pairing.id}`] = el;
+                                  }
+                                }}
+                              >
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-white font-mono font-bold">
+                                  {pairing.table_number}
+                                </td>
+                                
+                                <td className="px-4 py-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-2">
+                                    {pairing.first_move_player_id === pairing.player1_id && (
+                                      <div className="w-3 h-3 bg-green-500 rounded-full" title="First move"></div>
+                                    )}
+                                    <button
+                                      onClick={() => handlePlayerClick(pairing.player1.id)}
+                                      className={`text-left hover:text-blue-300 transition-colors duration-200 ${
+                                        highlightedPlayerId === pairing.player1_id ? 'text-yellow-300' : ''
+                                      }`}
+                                    >
+                                      <div className="text-sm font-medium text-white">
+                                        {pairing.player1.name}
+                                      </div>
+                                      <div className="text-xs text-gray-400 font-jetbrains">
+                                        #{pairing.player1_rank} • {pairing.player1.rating}
+                                      </div>
+                                    </button>
+                                  </div>
+                                </td>
+                                
+                                <td className="px-4 py-4 text-center">
+                                  <span className="text-lg font-bold text-white font-mono">
+                                    {pairing.result?.player1_score ?? '—'}
+                                  </span>
+                                </td>
+                                
+                                <td className="px-4 py-4 text-center">
+                                  <span className="text-lg font-bold text-white font-mono">
+                                    {pairing.result?.player2_score ?? '—'}
+                                  </span>
+                                </td>
+                                
+                                <td className="px-4 py-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-2">
+                                    {pairing.first_move_player_id === pairing.player2_id && (
+                                      <div className="w-3 h-3 bg-green-500 rounded-full" title="First move"></div>
+                                    )}
+                                    <button
+                                      onClick={() => handlePlayerClick(pairing.player2.id)}
+                                      className={`text-left hover:text-blue-300 transition-colors duration-200 ${
+                                        highlightedPlayerId === pairing.player2_id ? 'text-yellow-300' : ''
+                                      }`}
+                                    >
+                                      <div className="text-sm font-medium text-white">
+                                        {pairing.player2.name}
+                                      </div>
+                                      <div className="text-xs text-gray-400 font-jetbrains">
+                                        #{pairing.player2_rank} • {pairing.player2.rating}
+                                      </div>
+                                    </button>
+                                  </div>
+                                </td>
+                                
+                                <td className="px-4 py-4 text-center">
+                                  {pairing.result ? (
+                                    <div className="flex items-center justify-center">
+                                      {pairing.result.winner_id === pairing.player1_id ? (
+                                        <span className="text-green-400 font-jetbrains text-sm">P1 Wins</span>
+                                      ) : pairing.result.winner_id === pairing.player2_id ? (
+                                        <span className="text-green-400 font-jetbrains text-sm">P2 Wins</span>
+                                      ) : (
+                                        <span className="text-yellow-400 font-jetbrains text-sm">Tie</span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500 font-jetbrains text-sm">Pending</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {filteredPairings.length === 0 && (
+                        <div className="text-center py-8 text-gray-400 font-jetbrains">
+                          No pairings match your search
+                        </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
-              
-              {Object.keys(pairings).length === 0 && (
+                  );
+                })
+              ) : (
                 <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-12 text-center backdrop-blur-sm">
                   <p className="text-gray-400 font-jetbrains">No pairings available yet</p>
                 </div>
@@ -966,10 +1184,17 @@ const PublicTournamentView: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
-                      {standings.map((standing) => (
+                      {filteredStandings.map((standing) => (
                         <tr 
                           key={standing.id} 
-                          className={`transition-colors duration-200 hover:bg-gray-800/30 ${getRankStyle(standing.rank)}`}
+                          className={`transition-colors duration-200 hover:bg-gray-800/30 ${
+                            highlightedPlayerId === standing.id
+                              ? 'bg-yellow-900/20 border-y border-yellow-500/30'
+                              : getRankStyle(standing.rank)
+                          }`}
+                          ref={el => {
+                            if (el) playerRefs.current[standing.id] = el;
+                          }}
                         >
                           <td className="px-4 py-4 whitespace-nowrap">
                             <div className="flex items-center gap-2">
@@ -984,7 +1209,9 @@ const PublicTournamentView: React.FC = () => {
                               onClick={() => handlePlayerClick(standing.id)}
                               className="text-left hover:bg-blue-500/20 rounded-lg p-2 -m-2 transition-all duration-200 group"
                             >
-                              <div className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors duration-200">
+                              <div className={`text-sm font-medium group-hover:text-blue-300 transition-colors duration-200 ${
+                                highlightedPlayerId === standing.id ? 'text-yellow-300' : 'text-white'
+                              }`}>
                                 {standing.name}
                               </div>
                               <div className="text-xs text-gray-400 font-jetbrains">
@@ -1027,42 +1254,14 @@ const PublicTournamentView: React.FC = () => {
                   </table>
                 </div>
                 
-                {standings.length === 0 && (
+                {filteredStandings.length === 0 && (
                   <div className="text-center py-12 text-gray-400 font-jetbrains">
-                    No standings available yet
+                    {searchQuery ? 'No standings match your search' : 'No standings available yet'}
                   </div>
                 )}
               </div>
             </div>
           )}
-        </div>
-
-        {/* Tournament Info */}
-        <div className="max-w-6xl mx-auto w-full mt-8 mb-4">
-          <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
-            <h2 className="text-lg font-bold text-white font-orbitron mb-4">Tournament Information</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {tournament.date && (
-                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                  <Calendar size={16} className="text-blue-400" />
-                  <span>{new Date(tournament.date).toLocaleDateString()}</span>
-                </div>
-              )}
-              
-              {tournament.venue && (
-                <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                  <MapPin size={16} className="text-green-400" />
-                  <span>{tournament.venue}</span>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-2 text-gray-300 font-jetbrains">
-                <Trophy size={16} className="text-yellow-400" />
-                <span>{tournament.rounds || 7} Rounds</span>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
