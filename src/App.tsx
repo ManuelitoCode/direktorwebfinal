@@ -15,6 +15,7 @@ import TournamentResume from './components/TournamentResume';
 import PublicTournamentView from './components/PublicTournamentView';
 import LandingPage from './components/LandingPage';
 import TournamentControlCenter from './components/TournamentControlCenter';
+import DirectorsLeaderboard from './components/DirectorsLeaderboard';
 import { supabase } from './lib/supabase';
 import { useTournamentProgress } from './hooks/useTournamentProgress';
 import { useAuditLog } from './hooks/useAuditLog';
@@ -702,6 +703,11 @@ function TournamentControlCenterRoute() {
   );
 }
 
+// Directors Leaderboard Route Component
+function DirectorsLeaderboardRoute() {
+  return <DirectorsLeaderboard />;
+}
+
 function App() {
   return (
     <Router>
@@ -717,6 +723,7 @@ function App() {
         <Route path="/tournament/:tournamentId/dashboard" element={<TournamentControlCenterRoute />} />
         <Route path="/t/:tournamentId" element={<PublicTournamentRoute />} />
         <Route path="/projector/:tournamentId/:divisionId" element={<ProjectionModeRoute />} />
+        <Route path="/leaderboard/directors" element={<DirectorsLeaderboardRoute />} />
       </Routes>
     </Router>
   );
