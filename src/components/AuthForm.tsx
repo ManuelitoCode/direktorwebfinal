@@ -61,6 +61,7 @@ export default function AuthForm({ onAuthSuccess, initialMode = 'signin' }: Auth
         // Switch to sign in mode
         setIsSignUp(false);
         setPassword('');
+        navigate('/auth/signin', { replace: true });
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
