@@ -25,44 +25,59 @@ const TopDirectorsSpotlight: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      // Query to get top directors by tournament count
-      const { data, error } = await supabase
+      // First, get all tournaments with their director_ids
+      const { data: tournamentsData, error: tournamentsError } = await supabase
         .from('tournaments')
-        .select(`
-          director_id,
-          count
-        `)
-        .not('director_id', 'is', null)
-        .group('director_id')
-        .order('count', { ascending: false })
-        .limit(5);
+        .select('director_id')
+        .not('director_id', 'is', null);
 
-      if (error) throw error;
+      if (tournamentsError) throw tournamentsError;
+
+      if (!tournamentsData || tournamentsData.length === 0) {
+        setDirectors([]);
+        return;
+      }
+
+      // Count tournaments per director
+      const directorCounts = tournamentsData.reduce((acc, tournament) => {
+        const directorId = tournament.director_id;
+        acc[directorId] = (acc[directorId] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Sort directors by tournament count and take top 5
+      const topDirectorIds = Object.entries(directorCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([directorId, count]) => ({ directorId, count }));
+
+      if (topDirectorIds.length === 0) {
+        setDirectors([]);
+        return;
+      }
 
       // Get user profiles for these directors
-      if (data && data.length > 0) {
-        const directorIds = data.map(item => item.director_id);
-        
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('user_profiles')
-          .select('id, username, avatar_url')
-          .in('id', directorIds);
+      const directorIds = topDirectorIds.map(item => item.directorId);
+      
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('id, username, avatar_url')
+        .in('id', directorIds);
 
-        if (profilesError) throw profilesError;
+      if (profilesError) throw profilesError;
 
-        // Combine data
-        const directorsWithProfiles = data.map(item => {
-          const profile = profilesData?.find(p => p.id === item.director_id);
-          return {
-            id: item.director_id,
-            username: profile?.username || 'Tournament Director',
-            avatar_url: profile?.avatar_url,
-            tournament_count: item.count
-          };
-        });
+      // Combine data
+      const directorsWithProfiles = topDirectorIds.map(item => {
+        const profile = profilesData?.find(p => p.id === item.directorId);
+        return {
+          id: item.directorId,
+          username: profile?.username || 'Tournament Director',
+          avatar_url: profile?.avatar_url,
+          tournament_count: item.count
+        };
+      });
 
-        setDirectors(directorsWithProfiles);
-      }
+      setDirectors(directorsWithProfiles);
     } catch (err) {
       console.error('Error fetching top directors:', err);
       setError('Failed to load top directors');
