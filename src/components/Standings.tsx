@@ -250,48 +250,27 @@ const Standings: React.FC<StandingsProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const getRankStyle = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/20 border-yellow-500/50 text-yellow-400';
-      case 2:
-        return 'bg-gradient-to-r from-gray-400/20 to-gray-500/20 border-gray-400/50 text-gray-300';
-      case 3:
-        return 'bg-gradient-to-r from-amber-600/20 to-amber-700/20 border-amber-600/50 text-amber-400';
-      default:
-        return '';
-    }
-  };
-
-  const getRankIcon = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return <Trophy className="w-5 h-5 text-yellow-400" />;
-      case 2:
-        return <Medal className="w-5 h-5 text-gray-400" />;
-      case 3:
-        return <Medal className="w-5 h-5 text-amber-600" />;
-      default:
-        return null;
-    }
-  };
-
   const formatLastGame = (lastGame: PlayerStanding['lastGame']) => {
-    if (!lastGame) return 'No games';
+    if (!lastGame) return '—';
 
-    const resultIcon = lastGame.result === 'won' ? '✅' : lastGame.result === 'lost' ? '❌' : '⚖️';
-    const resultText = lastGame.result === 'won' ? 'Won' : lastGame.result === 'lost' ? 'Lost' : 'Drew';
+    let resultText = '';
+    let resultClass = '';
+    
+    if (lastGame.result === 'won') {
+      resultText = 'Win';
+      resultClass = 'text-green-400';
+    } else if (lastGame.result === 'lost') {
+      resultText = 'Loss';
+      resultClass = 'text-red-400';
+    } else {
+      resultText = 'Draw';
+      resultClass = 'text-yellow-400';
+    }
     
     return (
-      <div className="text-xs">
-        <div className="flex items-center gap-1 mb-1">
-          <span>{resultIcon}</span>
-          <span className="font-medium">{resultText}</span>
-        </div>
-        <div className="text-gray-400">
-          ({lastGame.playerScore}–{lastGame.opponentScore}) vs {lastGame.opponentName} (#{lastGame.opponentRank})
-        </div>
-      </div>
+      <span className={resultClass}>
+        {resultText} vs {lastGame.opponentName} ({lastGame.playerScore}–{lastGame.opponentScore})
+      </span>
     );
   };
 
@@ -316,7 +295,7 @@ const Standings: React.FC<StandingsProps> = ({
               className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors duration-200"
             >
               <ArrowLeft size={20} />
-              <span className="font-jetbrains">Back</span>
+              <span className="font-jetbrains">← Back to Dashboard</span>
             </button>
             <div className="flex items-center gap-2 text-yellow-400">
               <Trophy size={24} />
@@ -329,14 +308,8 @@ const Standings: React.FC<StandingsProps> = ({
             STANDINGS
           </h1>
           
-          {tournament && (
-            <p className="fade-up fade-up-delay-1 text-xl md:text-2xl text-yellow-400 mb-4 font-medium">
-              {tournament.name}
-            </p>
-          )}
-          
-          <p className="fade-up fade-up-delay-2 text-lg text-gray-300 mb-6 font-light tracking-wide">
-            Live Standings – Round {currentRound}
+          <p className="fade-up fade-up-delay-1 text-xl md:text-2xl text-yellow-400 mb-4 font-medium">
+            Round {currentRound} Standings
           </p>
           
           <div className="fade-up fade-up-delay-3 w-24 h-1 bg-gradient-to-r from-yellow-500 to-orange-500 mx-auto rounded-full"></div>
@@ -367,8 +340,8 @@ const Standings: React.FC<StandingsProps> = ({
           <div className="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden backdrop-blur-sm">
             <div className="p-6 border-b border-gray-700">
               <h2 className="text-xl font-bold text-white font-orbitron flex items-center gap-2">
-                <Users size={24} />
-                Tournament Leaderboard
+                <Trophy size={24} />
+                Round {currentRound} Standings
               </h2>
             </div>
             
@@ -377,59 +350,34 @@ const Standings: React.FC<StandingsProps> = ({
                 <thead className="bg-gray-800/50">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Rank</th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player Name (#ID)</th>
-                    <th className="px-6 py-4 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">W–L–D</th>
-                    <th className="px-6 py-4 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Points</th>
+                    <th className="px-6 py-4 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Won–Lost</th>
                     <th className="px-6 py-4 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Spread</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Player</th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains">Last Game</th>
-                    <th className="px-6 py-4 text-center text-xs font-medium text-gray-300 uppercase tracking-wider font-jetbrains"># Starts</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {standings.map((standing) => (
                     <tr 
                       key={standing.id} 
-                      className={`transition-colors duration-200 hover:bg-gray-800/30 ${getRankStyle(standing.rank)}`}
+                      className="hover:bg-gray-800/30 transition-colors duration-200 even:bg-gray-800/10"
                     >
                       {/* Rank */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          {getRankIcon(standing.rank)}
-                          <span className="text-lg font-bold font-orbitron">
+                          <span className="text-lg font-bold font-mono text-white">
                             {standing.rank}
                           </span>
                         </div>
                       </td>
                       
-                      {/* Player Name - Clickable */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => handlePlayerClick(standing.id)}
-                          className="text-left hover:bg-blue-500/20 rounded-lg p-2 -m-2 transition-all duration-200 group"
-                        >
-                          <div className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors duration-200">
-                            {standing.name}
-                          </div>
-                          <div className="text-xs text-gray-400 font-jetbrains">
-                            Rating: {standing.rating}
-                          </div>
-                        </button>
-                      </td>
-                      
-                      {/* W-L-D */}
+                      {/* Won-Lost */}
                       <td className="px-6 py-4 text-center">
                         <div className="font-mono text-sm text-white">
                           <span className="text-green-400">{standing.wins}</span>–
-                          <span className="text-red-400">{standing.losses}</span>–
-                          <span className="text-yellow-400">{standing.draws}</span>
+                          <span className="text-red-400">{standing.losses}</span>
+                          {standing.draws > 0 && <span className="text-yellow-400">–{standing.draws}</span>}
                         </div>
-                      </td>
-                      
-                      {/* Points */}
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-lg font-bold text-white font-orbitron">
-                          {standing.points}
-                        </span>
                       </td>
                       
                       {/* Spread */}
@@ -442,18 +390,23 @@ const Standings: React.FC<StandingsProps> = ({
                         </span>
                       </td>
                       
-                      {/* Last Game */}
-                      <td className="px-6 py-4">
-                        <div className="max-w-xs">
-                          {formatLastGame(standing.lastGame)}
-                        </div>
+                      {/* Player Name - Clickable */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handlePlayerClick(standing.id)}
+                          className="text-left hover:bg-blue-500/20 rounded-lg p-2 -m-2 transition-all duration-200 group"
+                        >
+                          <div className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors duration-200 font-jetbrains">
+                            {standing.name} (#{standing.rank})
+                          </div>
+                        </button>
                       </td>
                       
-                      {/* Starts */}
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-sm text-gray-300 font-mono">
-                          {standing.starts}
-                        </span>
+                      {/* Last Game */}
+                      <td className="px-6 py-4">
+                        <div className="max-w-xs font-jetbrains text-sm">
+                          {formatLastGame(standing.lastGame)}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -467,7 +420,7 @@ const Standings: React.FC<StandingsProps> = ({
         <div className="fade-up max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Button
             icon={ArrowLeft}
-            label="⬅ Back to Round Manager"
+            label="← Back to Round Manager"
             onClick={onBack}
             variant="blue"
           />
@@ -475,7 +428,7 @@ const Standings: React.FC<StandingsProps> = ({
           {currentRound < maxRounds && (
             <Button
               icon={ArrowRight}
-              label="➡ Next Round"
+              label="Next Round →"
               onClick={onNextRound}
               variant="green"
             />

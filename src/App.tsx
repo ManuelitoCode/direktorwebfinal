@@ -359,6 +359,7 @@ function HomePage() {
 
   const handleAuthSuccess = () => {
     // User is now authenticated, they will be redirected to dashboard automatically
+    navigate('/dashboard');
   };
 
   const copyTournamentLink = async () => {
@@ -687,11 +688,49 @@ function StatisticsRoute() {
 
 // Auth Route Component
 function AuthRoute() {
-  return <AuthForm onAuthSuccess={() => {}} />;
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        navigate('/dashboard');
+      }
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        navigate('/dashboard');
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return <AuthForm onAuthSuccess={() => navigate('/dashboard')} />;
 }
 
 // Dashboard Route Component
 function DashboardRoute() {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -703,10 +742,13 @@ function DashboardRoute() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (!session?.user) {
+        navigate('/');
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   return (
     <ProtectedRoute user={user} loading={loading}>
@@ -717,6 +759,7 @@ function DashboardRoute() {
 
 // Tournament Control Center Route Component
 function TournamentControlCenterRoute() {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -724,14 +767,20 @@ function TournamentControlCenterRoute() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      if (!session?.user) {
+        navigate('/auth');
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (!session?.user) {
+        navigate('/auth');
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   return (
     <ProtectedRoute user={user} loading={loading}>
