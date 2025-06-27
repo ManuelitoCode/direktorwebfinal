@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Plus, FolderOpen, LogOut, Settings, Share2, QrCode } from 'lucide-react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import ParticleBackground from './components/ParticleBackground';
 import Button from './components/Button';
 import PlayerRegistration from './components/PlayerRegistration';
