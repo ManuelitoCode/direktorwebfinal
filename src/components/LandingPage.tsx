@@ -38,11 +38,11 @@ const LandingPage: React.FC = () => {
   }, [navigate]);
 
   const handleSignIn = () => {
-    navigate('/auth');
+    navigate('/auth/signin');
   };
 
   const handleSignUp = () => {
-    navigate('/auth');
+    navigate('/auth/signup');
   };
   
   const handleViewAllDirectors = () => {

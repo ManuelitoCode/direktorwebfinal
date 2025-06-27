@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User, LogIn, Eye, EyeOff } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ParticleBackground from './ParticleBackground';
 import { useAuditLog } from '../hooks/useAuditLog';
 
 interface AuthFormProps {
   onAuthSuccess: () => void;
+  initialMode?: 'signin' | 'signup';
 }
 
-export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
+export default function AuthForm({ onAuthSuccess, initialMode = 'signin' }: AuthFormProps) {
   const navigate = useNavigate();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,7 +78,6 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         
         // Success! Navigate to dashboard
         onAuthSuccess();
-        navigate('/dashboard');
       }
     } catch (error: any) {
       setError(error.message);
@@ -103,6 +103,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       setIsSignUp(!isSignUp);
       setPassword('');
       setIsSliding(false);
+      
+      // Update URL without page reload
+      navigate(isSignUp ? '/auth/signin' : '/auth/signup', { replace: true });
     }, 150);
   };
 

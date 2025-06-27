@@ -689,6 +689,7 @@ function StatisticsRoute() {
 // Auth Route Component
 function AuthRoute() {
   const navigate = useNavigate();
+  const { mode } = useParams<{ mode?: string }>();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -725,7 +726,7 @@ function AuthRoute() {
     );
   }
 
-  return <AuthForm onAuthSuccess={() => navigate('/dashboard')} />;
+  return <AuthForm onAuthSuccess={() => navigate('/dashboard')} initialMode={mode === 'signup' ? 'signup' : 'signin'} />;
 }
 
 // Dashboard Route Component
@@ -738,6 +739,9 @@ function DashboardRoute() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      if (!session?.user) {
+        navigate('/');
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -800,6 +804,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthRoute />} />
+        <Route path="/auth/:mode" element={<AuthRoute />} />
         <Route path="/dashboard" element={<DashboardRoute />} />
         <Route path="/admin" element={<DashboardRoute />} />
         <Route path="/profile" element={<DashboardRoute />} />
