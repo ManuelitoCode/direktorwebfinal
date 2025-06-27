@@ -308,6 +308,22 @@ const TournamentControlCenter: React.FC = () => {
     });
   };
   
+  const handleViewStatistics = () => {
+    if (tournament?.slug) {
+      window.open(`https://direktorweb.com/tournaments/${tournament.slug}/statistics`, '_blank');
+    } else {
+      window.open(`https://direktorweb.com/t/${tournamentId}/statistics`, '_blank');
+    }
+    
+    // Log statistics view
+    logAction({
+      action: 'statistics_view_opened',
+      details: {
+        tournament_id: tournamentId
+      }
+    });
+  };
+  
   const handleCopyLink = async () => {
     try {
       let link;
@@ -570,6 +586,28 @@ const TournamentControlCenter: React.FC = () => {
                   Generate QR Code
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Statistics Section */}
+          <div className="fade-up fade-up-delay-6 max-w-6xl mx-auto w-full mb-8">
+            <div className="bg-gray-900/50 border border-cyan-500/30 rounded-xl p-6 backdrop-blur-sm">
+              <h2 className="text-xl font-bold text-white font-orbitron mb-6 flex items-center gap-2">
+                <BarChart3 size={24} className="text-cyan-400" />
+                Tournament Statistics
+              </h2>
+              
+              <p className="text-gray-300 font-jetbrains mb-6">
+                View detailed tournament statistics including highest scores, biggest upsets, and more.
+              </p>
+              
+              <button
+                onClick={handleViewStatistics}
+                className="flex items-center justify-center gap-3 px-6 py-4 bg-cyan-600/20 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-600/30 hover:text-white rounded-lg font-jetbrains font-medium transition-all duration-200 mx-auto"
+              >
+                <BarChart3 size={20} />
+                📊 View Tournament Statistics
+              </button>
             </div>
           </div>
 

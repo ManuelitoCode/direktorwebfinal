@@ -24,6 +24,7 @@ import type { User } from '@supabase/supabase-js';
 // Lazy-loaded components
 const ProjectionMode = React.lazy(() => import('./components/ProjectionMode'));
 const QRCodeModal = React.lazy(() => import('./components/QRCodeModal'));
+const Statistics = React.lazy(() => import('./components/Statistics/Statistics'));
 
 type Screen = 'home' | 'dashboard' | 'resume' | 'player-registration' | 'round-manager' | 'score-entry' | 'standings' | 'admin-panel';
 
@@ -669,6 +670,21 @@ function ProjectionModeRoute() {
   );
 }
 
+// Statistics Route Component
+function StatisticsRoute() {
+  const { tournamentId, slug } = useParams<{ tournamentId?: string; slug?: string }>();
+  
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    }>
+      <Statistics tournamentId={tournamentId} isPublic={true} />
+    </Suspense>
+  );
+}
+
 // Auth Route Component
 function AuthRoute() {
   return <AuthForm onAuthSuccess={() => {}} />;
@@ -744,6 +760,9 @@ function App() {
         <Route path="/tournament/:tournamentId/dashboard" element={<TournamentControlCenterRoute />} />
         <Route path="/t/:tournamentId" element={<PublicTournamentRoute />} />
         <Route path="/tournaments/:slug" element={<PublicTournamentRoute />} />
+        <Route path="/t/:tournamentId/statistics" element={<StatisticsRoute />} />
+        <Route path="/tournaments/:slug/statistics" element={<StatisticsRoute />} />
+        <Route path="/statistics" element={<StatisticsRoute />} />
         <Route path="/projector/:tournamentId/:divisionId" element={<ProjectionModeRoute />} />
         <Route path="/leaderboard/directors" element={<DirectorsLeaderboardRoute />} />
       </Routes>

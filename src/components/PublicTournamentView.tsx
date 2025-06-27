@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Search, X } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Users, Trophy, Calendar, MapPin, Download, ChevronDown, Search, X, BarChart3 } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import PlayerDetailsModal from './PlayerDetailsModal';
 import TournamentHeader from './TournamentHeader';
@@ -383,6 +383,14 @@ const PublicTournamentView: React.FC = () => {
 
   const handleBackToHome = () => {
     navigate('/');
+  };
+
+  const handleViewStatistics = () => {
+    if (tournament?.slug) {
+      navigate(`/tournaments/${tournament.slug}/statistics`);
+    } else if (tournament?.id) {
+      navigate(`/t/${tournament.id}/statistics`);
+    }
   };
 
   const exportStandings = () => {
@@ -1033,6 +1041,17 @@ const PublicTournamentView: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Statistics Button */}
+        <div className="max-w-6xl mx-auto w-full mt-8 mb-8">
+          <button
+            onClick={handleViewStatistics}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/40 hover:to-blue-600/40 text-cyan-300 hover:text-white border border-cyan-500/50 rounded-lg font-jetbrains font-medium transition-all duration-200 mx-auto"
+          >
+            <BarChart3 size={20} />
+            📊 View Tournament Statistics
+          </button>
         </div>
 
         {/* Footer */}
