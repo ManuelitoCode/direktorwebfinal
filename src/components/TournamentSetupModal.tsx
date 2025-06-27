@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck, ArrowRight, Lock, Eye, EyeOff } from 'lucide-react';
+import { X, Calendar, MapPin, Users, Trophy, Zap, Brain, Target, Save, UserCheck, ArrowRight, Lock, Eye, EyeOff, Share2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { WizardResponses, TournamentConfig, PairingFormat } from '../types/database';
 import { recommendPairingSystem } from '../utils/pairingStrategyIntelligence';
