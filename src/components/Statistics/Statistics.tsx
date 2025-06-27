@@ -740,7 +740,7 @@ const Statistics: React.FC<StatisticsProps> = ({ tournamentId: propTournamentId,
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains transition-all duration-200 mx-auto"
           >
             <ArrowLeft size={16} />
-            Back
+            {isPublic ? '← Back to Tournament' : '← Back to Dashboard'}
           </button>
         </div>
       </div>
@@ -758,7 +758,7 @@ const Statistics: React.FC<StatisticsProps> = ({ tournamentId: propTournamentId,
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains transition-all duration-200 mx-auto"
           >
             <ArrowLeft size={16} />
-            Back to Dashboard
+            ← Back to Home
           </button>
         </div>
       </div>
@@ -779,7 +779,7 @@ const Statistics: React.FC<StatisticsProps> = ({ tournamentId: propTournamentId,
             >
               <ArrowLeft size={20} />
               <span className="font-jetbrains">
-                {isPublic ? 'Back to Tournament' : 'Back to Dashboard'}
+                {isPublic ? '← Back to Tournament' : '← Back to Dashboard'}
               </span>
             </button>
             
