@@ -733,7 +733,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                         type={formData.showPassword ? 'text' : 'password'}
                         value={formData.password}
                         onChange={(e) => handleInputChange('password', e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 font-jetbrains pr-10"
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 font-jetbrains pr-10"
                         placeholder="Enter password"
                       />
                       <button
@@ -847,7 +847,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                       <Brain className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h4 className="text-2xl font-bold text-white font-orbitron group-hover:text-purple-300 transition-colors duration-300">
+                      <h4 className="text-2xl font-bold text-white font-orbitron mb-2 group-hover:text-purple-300 transition-colors duration-300">
                         🤖 AI Recommendation
                       </h4>
                       <p className="text-purple-300 font-jetbrains">Intelligent pairing wizard</p>
@@ -874,7 +874,7 @@ const TournamentSetupModal: React.FC<TournamentSetupModalProps> = ({
                       <Target className="w-8 h-8 text-white" />
                     </div>
                     <div>
-                      <h4 className="text-2xl font-bold text-white font-orbitron group-hover:text-cyan-300 transition-colors duration-300">
+                      <h4 className="text-2xl font-bold text-white font-orbitron mb-2 group-hover:text-cyan-300 transition-colors duration-300">
                         🎯 Manual Selection
                       </h4>
                       <p className="text-cyan-300 font-jetbrains">Direct format choice</p>

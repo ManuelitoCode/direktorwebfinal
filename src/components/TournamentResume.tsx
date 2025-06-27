@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Eye, Trash2, Calendar, MapPin, Users, Trophy, Clock, ArrowRight, Target } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Plus, FolderOpen, Trash2, Calendar, MapPin, Users, Trophy, Clock, ArrowRight, Target } from 'lucide-react';
 import ParticleBackground from './ParticleBackground';
 import Button from './Button';
 import { supabase } from '../lib/supabase';
@@ -99,8 +99,12 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
     onResumeTournament(tournament.id, tournament.current_round || 1);
   };
 
-  const handleViewTournament = (tournamentId: string) => {
-    navigate(`/t/${tournamentId}`);
+  const handleViewTournament = (tournament: TournamentWithStats) => {
+    if (tournament.slug) {
+      window.open(`https://direktorweb.com/tournaments/${tournament.slug}`, '_blank');
+    } else {
+      window.open(`https://direktorweb.com/t/${tournament.id}`, '_blank');
+    }
   };
 
   const handleOpenControlCenter = (tournamentId: string) => {
@@ -214,7 +218,7 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
         {/* New Tournament Button */}
         <div className="fade-up fade-up-delay-4 max-w-6xl mx-auto w-full mb-8">
           <Button
-            icon={Trophy}
+            icon={Plus}
             label="🆕 Start New Tournament"
             onClick={onNewTournament}
             variant="blue"
@@ -329,15 +333,15 @@ const TournamentResume: React.FC<TournamentResumeProps> = ({
                         onClick={() => handleResumeTournament(tournament)}
                         className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                       >
-                        <Play size={16} />
+                        <Plus size={16} />
                         Resume
                       </button>
                       
                       <button
-                        onClick={() => handleViewTournament(tournament.id)}
+                        onClick={() => handleViewTournament(tournament)}
                         className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-jetbrains font-medium transition-all duration-200"
                       >
-                        <Eye size={16} />
+                        <FolderOpen size={16} />
                         View
                       </button>
                       

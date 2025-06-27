@@ -293,7 +293,11 @@ const TournamentControlCenter: React.FC = () => {
   };
   
   const handleViewPublic = () => {
-    window.open(`/t/${tournamentId}`, '_blank');
+    if (tournament?.slug) {
+      window.open(`https://direktorweb.com/tournaments/${tournament.slug}`, '_blank');
+    } else {
+      window.open(`https://direktorweb.com/t/${tournamentId}`, '_blank');
+    }
     
     // Log public view
     logAction({
@@ -306,7 +310,13 @@ const TournamentControlCenter: React.FC = () => {
   
   const handleCopyLink = async () => {
     try {
-      const link = `${window.location.origin}/t/${tournamentId}`;
+      let link;
+      if (tournament?.slug) {
+        link = `https://direktorweb.com/tournaments/${tournament.slug}`;
+      } else {
+        link = `https://direktorweb.com/t/${tournamentId}`;
+      }
+      
       await navigator.clipboard.writeText(link);
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
@@ -315,12 +325,13 @@ const TournamentControlCenter: React.FC = () => {
       logAction({
         action: 'tournament_link_copied',
         details: {
-          tournament_id: tournamentId
+          tournament_id: tournamentId,
+          link_type: tournament?.slug ? 'slug' : 'id'
         }
       });
     } catch (err) {
       console.error('Failed to copy link:', err);
-      alert(`Tournament link: ${window.location.origin}/t/${tournamentId}`);
+      alert(`Tournament link: ${tournament?.slug ? `https://direktorweb.com/tournaments/${tournament.slug}` : `https://direktorweb.com/t/${tournamentId}`}`);
     }
   };
 

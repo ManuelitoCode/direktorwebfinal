@@ -79,8 +79,12 @@ James Rodriguez, 1856`;
       if (tournamentError) throw tournamentError;
       setTournament(tournamentData);
 
-      // Generate public URL
-      setPublicUrl(`${window.location.origin}/t/${tournamentId}`);
+      // Generate public URL using slug if available
+      if (tournamentData.slug) {
+        setPublicUrl(`https://direktorweb.com/tournaments/${tournamentData.slug}`);
+      } else {
+        setPublicUrl(`https://direktorweb.com/t/${tournamentId}`);
+      }
 
       // Load divisions if they exist
       const { data: divisionsData, error: divisionsError } = await supabase
@@ -287,6 +291,10 @@ James Rodriguez, 1856`;
       // Fallback: show alert with link
       alert(`Tournament link: ${publicUrl}`);
     }
+  };
+  
+  const handleViewPublic = () => {
+    window.open(publicUrl, '_blank');
   };
 
   const handleGenerateTeamSchedule = async () => {
@@ -514,26 +522,36 @@ James Rodriguez, 1856`;
                   </p>
                 </div>
                 
-                <button
-                  onClick={handleCopyLink}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-jetbrains font-medium transition-all duration-200 ${
-                    linkCopied
-                      ? 'bg-green-600 text-white'
-                      : 'bg-green-600/20 border border-green-500/50 text-green-400 hover:bg-green-600 hover:text-white'
-                  }`}
-                >
-                  {linkCopied ? (
-                    <>
-                      <Check size={16} />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={16} />
-                      Copy Link
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={handleViewPublic}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg font-jetbrains font-medium transition-all duration-200 bg-blue-600/20 border border-blue-500/50 text-blue-400 hover:bg-blue-600 hover:text-white"
+                  >
+                    <Eye size={16} />
+                    View Page
+                  </button>
+                  
+                  <button
+                    onClick={handleCopyLink}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-jetbrains font-medium transition-all duration-200 ${
+                      linkCopied
+                        ? 'bg-green-600 text-white'
+                        : 'bg-green-600/20 border border-green-500/50 text-green-400 hover:bg-green-600 hover:text-white'
+                    }`}
+                  >
+                    {linkCopied ? (
+                      <>
+                        <Check size={16} />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={16} />
+                        Copy Link
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
